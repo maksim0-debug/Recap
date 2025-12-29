@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        
+        {
+            "name": ".NET Framework Launch",
+            "type": "clr",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/Recap/bin/Debug/net48/Recap.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/Recap/bin/Debug/net48",
+            "console": "internalConsole",
+            "stopAtEntry": false
+        }
+    ]
+}

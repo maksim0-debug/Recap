@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Recap Tracker",
+  "version": "1.0",
+  "description": "Передает домен активной вкладки в приложение Recap",
+  "permissions": [
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:19999/"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
