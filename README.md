@@ -3,7 +3,8 @@
 Recap is a local, privacy-focused activity tracker. It records your screen, performs Optical Character Recognition (OCR), tracks website usage, and visualizes your productivity. All data remains 100% local.
 
 ## ✨ Key Features
-<img width="886" height="693" alt="image" src="https://github.com/user-attachments/assets/556ad38b-dd79-4d03-aad5-413e89fa71cb" />
+<img width="886" height="693" alt="image" src="https://github.com/user-attachments/assets/0e6f7aa1-ad8f-48a1-a0d5-f6cddca73865" />
+
 
 
 
@@ -24,7 +25,8 @@ Recap is a local, privacy-focused activity tracker. It records your screen, perf
 ## 🌐 Browser Tracking
 Works in tandem with a companion browser extension to log visited URLs and YouTube video titles. This enables you to search your history by specific web pages.
 
-<img width="163" height="315" alt="image" src="https://github.com/user-attachments/assets/5dd207d0-a25a-4c22-80e5-91f5eaf82dbe" />
+<img width="162" height="313" alt="image" src="https://github.com/user-attachments/assets/345630b8-e77c-49c7-ab73-c774e10e87e9" />
+
 
 
 ## 📦 Recap Converter
