@@ -3,6 +3,7 @@
 Recap is a local, privacy-focused activity tracker. It records your screen, performs Optical Character Recognition (OCR), tracks website usage, and visualizes your productivity. All data remains 100% local.
 
 ## ✨ Key Features
+<img width="927" height="693" alt="image" src="https://github.com/user-attachments/assets/3b97427f-c746-4f0a-a07f-061e6f497d07" />
 
 ### 🧠 Smart Recording
 * **Context-Aware:** Recap captures screenshots only when the content on your screen changes.
