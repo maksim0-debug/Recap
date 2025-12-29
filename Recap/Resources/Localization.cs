@@ -85,6 +85,11 @@ namespace Recap
                     { "chartReset", "Reset Filter" },
                     { "loadingData", "Loading data..." },
                     { "activityTooltip", "{0}:00 - {1}:00\nActivity: {2}h {3}m" },
+                    { "activity", "Activity" },
+                    { "timeFormatFull", "{0}h {1}m {2}s" },
+                    { "timeFormatShort", "{0}h {1}m" },
+                    { "timeFormatMinSec", "{0}m {1}s" },
+                    { "timeFormatSec", "{0}s" },
                     { "interval_5fps", "5 FPS" },
                     { "interval_2fps", "2 FPS" },
                     { "interval_1fps", "1 FPS" },
@@ -96,7 +101,11 @@ namespace Recap
                     { "periodWeek", "Last Week" },
                     { "periodMonth", "Last Month" },
                     { "periodAll", "All Time" },
-                    { "periodCustom", "Custom Range" }
+                    { "periodCustom", "Custom Range" },
+                    { "extWarnTitle", "Browser Extension Required" },
+                    { "extWarnText", "To ensure Recap works correctly (tracking URLs and YouTube video titles), you need to install the browser extension.\n\n1. Open your browser (Chrome/Edge/Brave).\n2. Go to chrome://extensions\n3. Enable 'Developer mode' (top right).\n4. Click 'Load unpacked'.\n5. Select the 'browser-extension' folder located in the application directory." },
+                    { "extWarnDontShow", "Don't show this again" },
+                    { "extWarnOpenFolder", "Open extension folder" }
                 }
             },
             {
@@ -175,6 +184,11 @@ namespace Recap
                     { "chartReset", "Сброс фильтра" },
                     { "loadingData", "Загрузка данных..." },
                     { "activityTooltip", "{0}:00 - {1}:00\nАктивность: {2}ч {3}м" },
+                    { "activity", "Активность" },
+                    { "timeFormatFull", "{0}ч {1}м {2}с" },
+                    { "timeFormatShort", "{0}ч {1}м" },
+                    { "timeFormatMinSec", "{0}м {1}с" },
+                    { "timeFormatSec", "{0}с" },
                     { "interval_5fps", "5 FPS" },
                     { "interval_2fps", "2 FPS" },
                     { "interval_1fps", "1 FPS" },
@@ -186,7 +200,11 @@ namespace Recap
                     { "periodWeek", "За неделю" },
                     { "periodMonth", "За месяц" },
                     { "periodAll", "За всё время" },
-                    { "periodCustom", "Пользовательский" }
+                    { "periodCustom", "Пользовательский" },
+                     { "extWarnTitle", "Требуется расширение браузера" },
+                    { "extWarnText", "Для корректной работы (отслеживание URL и названий видео на YouTube) необходимо установить расширение браузера.\n\n1. Откройте браузер (Chrome/Edge).\n2. Перейдите по адресу chrome://extensions\n3. Включите 'Режим разработчика' (вверху справа).\n4. Нажмите 'Загрузить распакованное расширение'.\n5. Выберите папку 'browser-extension', которая находится в папке с программой." },
+                    { "extWarnDontShow", "Больше не показывать это окно" },
+                    { "extWarnOpenFolder", "Открыть папку расширения" }
                 }
             },
             {
@@ -265,6 +283,11 @@ namespace Recap
                     { "chartReset", "Скинути фільтр" },
                     { "loadingData", "Завантаження даних..." },
                     { "activityTooltip", "{0}:00 - {1}:00\nАктивність: {2}год {3}хв" },
+                    { "activity", "Активність" },
+                    { "timeFormatFull", "{0}г {1}х {2}с" },
+                    { "timeFormatShort", "{0}г {1}х" },
+                    { "timeFormatMinSec", "{0}х {1}с" },
+                    { "timeFormatSec", "{0}с" },
                     { "interval_5fps", "5 FPS" },
                     { "interval_2fps", "2 FPS" },
                     { "interval_1fps", "1 FPS" },
@@ -276,7 +299,11 @@ namespace Recap
                     { "periodWeek", "За тиждень" },
                     { "periodMonth", "За місяць" },
                     { "periodAll", "За весь час" },
-                    { "periodCustom", "Користувацький" }
+                    { "periodCustom", "Користувацький" },
+                    { "extWarnTitle", "Потрібне розширення браузера" },
+                    { "extWarnText", "Для коректної роботи (відстеження URL та назв відео на YouTube ) необхідно встановити розширення браузера.\n\n1. Відкрийте браузер (Chrome/Edge).\n2. Перейдіть за адресою chrome://extensions\n3. Увімкніть 'Режим розробника' (згори праворуч).\n4. Натисніть 'Завантажити розпаковане розширення'.\n5. Виберіть теку 'browser-extension', яка знаходиться у теці з програмою." },
+                    { "extWarnDontShow", "Більше не показувати це вікно" },
+                    { "extWarnOpenFolder", "Відкрити теку розширення" }
                 }
             }
         };

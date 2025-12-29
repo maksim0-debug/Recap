@@ -24,12 +24,13 @@ namespace Recap
                 TargetWidth = 1280,
                 Language = "en",
                 StartWithWindows = false,
-                GlobalSearch = false,    
-                ShowFrameCount = false,    
-                EnableOCR = true,    
-                EnableTextHighlighting = true,    
-                DisableVideoPreviews = false,    
-                MotionThreshold = 1    
+                GlobalSearch = false,
+                ShowFrameCount = false,
+                EnableOCR = true,
+                EnableTextHighlighting = true,
+                DisableVideoPreviews = false,
+                MotionThreshold = 1,
+                SuppressExtensionWarning = false 
             };
 
             try
@@ -55,6 +56,8 @@ namespace Recap
                         settings.MotionThreshold = Convert.ToInt32(rk.GetValue("MotionThreshold", settings.MotionThreshold));
                         settings.MonitorDeviceName = (rk.GetValue("MonitorDeviceName") as string);
                         settings.ConverterLastPath = (rk.GetValue("ConverterLastPath") as string);
+
+                        settings.SuppressExtensionWarning = Convert.ToBoolean(rk.GetValue("SuppressExtensionWarning", settings.SuppressExtensionWarning));
                     }
                 }
 
@@ -83,14 +86,16 @@ namespace Recap
                     rk.SetValue("BlindZone", settings.BlindZone, RegistryValueKind.DWord);
                     rk.SetValue("TargetWidth", settings.TargetWidth, RegistryValueKind.DWord);
                     rk.SetValue("Language", settings.Language ?? "en", RegistryValueKind.String);
-                    
-                    rk.SetValue("GlobalSearch", settings.GlobalSearch, RegistryValueKind.DWord);     
+
+                    rk.SetValue("GlobalSearch", settings.GlobalSearch, RegistryValueKind.DWord);
                     rk.SetValue("ShowFrameCount", settings.ShowFrameCount, RegistryValueKind.DWord);
                     rk.SetValue("EnableOCR", settings.EnableOCR, RegistryValueKind.DWord);
                     rk.SetValue("EnableTextHighlighting", settings.EnableTextHighlighting, RegistryValueKind.DWord);
                     rk.SetValue("DisableVideoPreviews", settings.DisableVideoPreviews, RegistryValueKind.DWord);
                     rk.SetValue("MotionThreshold", settings.MotionThreshold, RegistryValueKind.DWord);
                     rk.SetValue("MonitorDeviceName", settings.MonitorDeviceName ?? "", RegistryValueKind.String);
+
+                    rk.SetValue("SuppressExtensionWarning", settings.SuppressExtensionWarning, RegistryValueKind.DWord);
                 }
 
                 using (RegistryKey rkRun = Registry.CurrentUser.OpenSubKey(RunRegistryPath, true))
@@ -147,4 +152,4 @@ namespace Recap
             }
         }
     }
-}    
+}

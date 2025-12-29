@@ -52,7 +52,7 @@ namespace Recap
                 if (hour != -1 && _hourlyData.ContainsKey(hour))
                 {
                     var duration = _hourlyData[hour];
-                    string text = Localization.Format("activityTooltip", hour, hour + 1, duration.Hours, duration.Minutes);
+                    string text = Localization.Format("activityTooltip", hour, hour + 1, (int)duration.TotalHours, duration.Minutes);
                     _toolTip.Show(text, this, PointToClient(Cursor.Position).X + 10, PointToClient(Cursor.Position).Y + 10);
                 }
                 else

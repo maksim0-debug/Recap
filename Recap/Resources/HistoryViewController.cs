@@ -662,6 +662,19 @@ namespace Recap
             {
                 _appMap = _frameRepository.GetAppMap();
                 foreach(var kvp in _appMap) { if (kvp.Value == newFrame.AppName) { appId = kvp.Key; break; } }
+
+                if (appId != -1)
+                {
+                    _appFilterController.RegisterApp(appId, newFrame.AppName);
+                }
+                else
+                {
+                    if (_appMap.Count > 0) appId = _appMap.Keys.Max() + 1;
+                    else appId = 1;
+                    
+                    _appMap[appId] = newFrame.AppName;
+                    _appFilterController.RegisterApp(appId, newFrame.AppName);
+                }
             }
 
             var miniFrame = new MiniFrame { TimestampTicks = newFrame.TimestampTicks, AppId = appId, IntervalMs = newFrame.IntervalMs };
@@ -707,7 +720,10 @@ namespace Recap
             {
                 if (_filteredFrames != _allLoadedFrames)
                 {
-                    _filteredFrames.Add(newFrame);
+                    if (!_filteredFrames.Any(x => x.TimestampTicks == newFrame.TimestampTicks))
+                    {
+                        _filteredFrames.Add(newFrame);
+                    }
                 }
 
                 _timelineController.SetFrames(_filteredFrames, true, false);

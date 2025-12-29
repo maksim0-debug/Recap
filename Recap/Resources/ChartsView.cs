@@ -215,7 +215,7 @@ namespace Recap
                 DataPoint point = _pieChart.Series[0].Points[idx];
 
                 TimeSpan t = TimeSpan.FromSeconds(val);
-                point.ToolTip = $"{appName}\n{(int)t.TotalHours}h {t.Minutes}m";
+                point.ToolTip = $"{appName}\n{Localization.Format("timeFormatShort", (int)t.TotalHours, t.Minutes)}";
                 point.LegendText = appName;
 
                 if (percentage < 0.03)

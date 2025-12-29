@@ -109,7 +109,7 @@ namespace Recap
                 if (hoveredDate.HasValue)
                 {
                     TimeSpan activity = _activityData.ContainsKey(hoveredDate.Value.Date) ? _activityData[hoveredDate.Value.Date] : TimeSpan.Zero;
-                    string tooltipText = $"{hoveredDate.Value.ToLongDateString()}\nАктивность: {activity:hh\\ч\\ mm\\м\\ ss\\с}";
+                    string tooltipText = $"{hoveredDate.Value.ToLongDateString()}\n{Localization.Get("activity")}: {Localization.Format("timeFormatFull", (int)activity.TotalHours, activity.Minutes, activity.Seconds)}";
                     _toolTip.Show(tooltipText, this, e.Location.X + 15, e.Location.Y + 15);
                 }
                 else

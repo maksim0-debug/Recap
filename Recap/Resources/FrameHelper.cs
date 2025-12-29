@@ -26,12 +26,12 @@ namespace Recap
             var ts = TimeSpan.FromMilliseconds(totalMs);
 
             if (ts.TotalHours >= 1)
-                return $"{(int)ts.TotalHours}ч {ts.Minutes}м";
+                return Localization.Format("timeFormatShort", (int)ts.TotalHours, ts.Minutes);
 
             if (ts.TotalMinutes >= 1)
-                return $"{ts.Minutes}м {ts.Seconds}с";
+                return Localization.Format("timeFormatMinSec", ts.Minutes, ts.Seconds);
 
-            return $"{ts.Seconds}с";
+            return Localization.Format("timeFormatSec", ts.Seconds);
         }
 
         public static long[] CalculateFrameDurations(List<FrameIndex> frames)

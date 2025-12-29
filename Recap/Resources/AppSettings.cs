@@ -26,6 +26,8 @@
 
         public string ConverterLastPath { get; set; }
 
+        public bool SuppressExtensionWarning { get; set; }
+
         public AppSettings Clone()
         {
             return (AppSettings)this.MemberwiseClone();

@@ -429,10 +429,32 @@ namespace Recap
             _uiStateManager.SetControlsEnabled(true, datePicker, timeTrackBar, lstAppFilter);
             UpdateLayout();
 
+            CheckExtensionWarning();
+
             if (_startMinimized)
             {
                 WindowState = FormWindowState.Minimized;
                 StartCapture();
+            }
+        }
+
+        private void CheckExtensionWarning()
+        {
+            if (!_currentSettings.SuppressExtensionWarning)
+            {
+                this.BeginInvoke((Action)(() =>
+                {
+                    using (var form = new ExtensionWarningForm())
+                    {
+                        form.ShowDialog(this);
+
+                        if (form.DontShowAgain)
+                        {
+                            _currentSettings.SuppressExtensionWarning = true;
+                            SaveSettings(); 
+                        }
+                    }
+                }));
             }
         }
 

@@ -101,8 +101,21 @@ namespace Recap
 
         public void AddFrame(MiniFrame newFrame)
         {
+            if (!_currentFrames.Any(f => f.TimestampTicks == newFrame.TimestampTicks))
+            {
+                _currentFrames.Add(newFrame);
+            }
+
             UpdateStatsWithFrame(newFrame);
             RefreshAppFilterList();
+        }
+
+        public void RegisterApp(int id, string name)
+        {
+            if (!_appMap.ContainsKey(id))
+            {
+                _appMap[id] = name;
+            }
         }
 
         private class NodeData
@@ -383,7 +396,8 @@ namespace Recap
                 {
                     if (string.IsNullOrEmpty(info.DetailKey) ||
                         info.DetailKey.Equals("YouTube", StringComparison.OrdinalIgnoreCase) ||
-                        info.DetailKey.Contains("youtube.com"))
+                        info.DetailKey.Contains("youtube.com") ||
+                        info.DetailKey.StartsWith("YouTube [v=", StringComparison.OrdinalIgnoreCase))
                     {
                         info.DetailKey = "Home";
                     }
