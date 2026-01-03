@@ -19,12 +19,13 @@ namespace Recap
         public LibVLC LibVLC { get; private set; }
         public MediaPlayer MainMediaPlayer { get; private set; }
 
-        private Button btnStart, btnStop, btnBrowse, btnFullscreen, btnSettings, btnPrevMonth, btnNextMonth;
+        private Button btnStart, btnStop, btnBrowse, btnFullscreen, btnSettings, btnPrevMonth, btnNextMonth, btnHelp;
         private TextBox txtStoragePath, txtAppSearch, txtOcrSearch;
         private DateTimePicker datePicker;
         private TrackBar timeTrackBar;
         private Label lblStatus, lblInfo, lblTime, lblPath, lblAppFilter, lblMonth, lblFormatBadge, lblOcrSearch;
         private DarkListBox lstAppFilter;
+        private DarkListBox lstNotes;
         private SuggestionForm _suggestionForm;
         private CheckBox chkAutoStart, chkAutoScroll, chkGlobalSearch;
         private NotifyIcon notifyIcon;
@@ -51,16 +52,18 @@ namespace Recap
         private TabControl statsTabControl;
         private TabPage tabPageHeatmap;
         private TabPage tabPageCharts;
-        private TabPage tabPageHourly;   
+        private TabPage tabPageHourly;
         private ChartsView chartsView;
-        private HourlyActivityHeatmap hourlyActivityHeatmap;   
-        private ComboBox cmbHourlyPeriod;   
+        private HourlyActivityHeatmap hourlyActivityHeatmap;
+        private ComboBox cmbHourlyPeriod;
         private DateTimePicker dtpHourlyStart;
         private DateTimePicker dtpHourlyEnd;
         private Label lblHourlyCustom;
-        private HourlyStatisticsController _hourlyStatisticsController;   
+        private HourlyStatisticsController _hourlyStatisticsController;
 
         private bool _suppressDateEvent = false;
+        private bool _isNotesMode = false;
+        private ContextMenuStrip _ctxMenuNotes;
 
         public MainForm(bool autoStart)
         {
@@ -80,8 +83,8 @@ namespace Recap
             InitializeControllers();
 
             _uiStateManager.SetState(false);
-            lblTime.BringToFront();         
-            lblTime.BackColor = Color.Transparent;       
+            lblTime.BringToFront();
+            lblTime.BackColor = Color.Transparent;
         }
 
         private void InitializeControllers()
@@ -95,9 +98,9 @@ namespace Recap
 
             _historyViewController?.Dispose();
             _statisticsViewController?.Dispose();
-            _hourlyStatisticsController?.Dispose();    
+            _hourlyStatisticsController?.Dispose();
 
-            _captureController = new CaptureController(_screenshotService, _frameRepository, _currentSettings, _ocrDb);
+            _captureController = new CaptureController(_screenshotService, _frameRepository, _currentSettings, _ocrDb, _ocrService);
             _captureController.FrameCaptured += OnFrameCaptured;
             _captureController.DayChanged += OnDayChanged;
 
@@ -108,7 +111,9 @@ namespace Recap
                 _frameRepository, _iconManager,
                 _currentSettings, _ocrDb, txtOcrSearch);
 
-            _historyViewController.FrameChanged += (img) => 
+            _historyViewController.SetNotesListBox(lstNotes);
+
+            _historyViewController.FrameChanged += (img) =>
             {
                 FrameChanged?.Invoke(img);
             };
@@ -117,7 +122,7 @@ namespace Recap
             {
                 if (this.InvokeRequired)
                 {
-                    this.Invoke((Action)(() => 
+                    this.Invoke((Action)(() =>
                     {
                         _suppressDateEvent = true;
                         datePicker.Value = date;
@@ -179,6 +184,17 @@ namespace Recap
             btnBrowse.Text = Localization.Get("browse");
             chkAutoStart.Text = Localization.Get("startWithWindows");
             lblPath.Text = Localization.Get("folder");
+
+            if (btnHelp != null)
+            {
+                var toolTip = new ToolTip();
+                toolTip.SetToolTip(btnHelp, Localization.Get("helpTitle"));
+
+                btnHelp.BackColor = Color.Transparent;
+                btnHelp.FlatAppearance.MouseDownBackColor = Color.Transparent;
+                btnHelp.FlatAppearance.MouseOverBackColor = Color.Transparent;
+            }
+
             chkAutoScroll.Text = Localization.Get("liveFeed");
             btnFullscreen.Text = Localization.Get("fullscreen");
             lblAppFilter.Text = Localization.Get("filterApps");
@@ -189,16 +205,16 @@ namespace Recap
                 notifyIcon.ContextMenuStrip.Items[0].Text = Localization.Get("trayShow");
                 notifyIcon.ContextMenuStrip.Items[1].Text = Localization.Get("trayExit");
             }
-            
+
             tabPageView.Text = Localization.Get("dayViewTab");
             tabPageStats.Text = Localization.Get("statsTab");
             tabPageHeatmap.Text = Localization.Get("heatmap");
             tabPageCharts.Text = Localization.Get("charts");
             tabPageHourly.Text = Localization.Get("hourlyActivity");
-            
+
             _statisticsViewController?.UpdateLocalization();
             _hourlyStatisticsController?.UpdateLocalization();
-            
+
             foreach (Control c in tabPageHeatmap.Controls)
             {
                 if (c is Button b && (b.Text == "Refresh" || b.Text == "Обновить" || b.Text == "Оновити"))
@@ -210,21 +226,31 @@ namespace Recap
             lblHourlyCustom.Text = Localization.Get("periodLabel");
             chkGlobalSearch.Text = Localization.Get("globalSearch");
             lblOcrSearch.Text = Localization.Get("ocrSearch");
-            
+
             if (datePicker.ContextMenuStrip != null && datePicker.ContextMenuStrip.Items.Count > 0)
             {
                 datePicker.ContextMenuStrip.Items[0].Text = Localization.Get("selectRange");
             }
-            
+
             if (notifyIcon.ContextMenuStrip != null && notifyIcon.ContextMenuStrip.Items.Count >= 2)
             {
                 notifyIcon.ContextMenuStrip.Items[0].Text = Localization.Get("trayShow");
                 notifyIcon.ContextMenuStrip.Items[1].Text = Localization.Get("trayExit");
             }
-            
+
             lblAppFilter.Text = Localization.Get("filterApps");
-            
+
+            if (_ctxMenuNotes != null && _ctxMenuNotes.Items.Count > 0)
+            {
+                _ctxMenuNotes.Items[0].Text = Localization.Get("deleteNote");
+            }
+
             chartsView?.UpdateLocalization();
+
+            if (_historyViewController != null)
+            {
+                _historyViewController.UpdateLocalization();
+            }
         }
 
         private void InitializeComponent()
@@ -253,15 +279,30 @@ namespace Recap
             btnStop = new Button { Location = new Point(120, 12), Size = new Size(100, 30) };
             btnStop.Click += BtnStop_Click;
             lblStatus = new Label { Location = new Point(230, 18), AutoSize = true };
+
             btnSettings = new Button { Size = new Size(130, 30), Anchor = AnchorStyles.Top | AnchorStyles.Right };
             btnSettings.Click += BtnSettings_Click;
+
+            btnHelp = new Button
+            {
+                Size = new Size(20, 20),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.Transparent,
+                Image = GenerateInfoIcon(20)
+            };
+            btnHelp.FlatAppearance.BorderSize = 0;
+            btnHelp.FlatAppearance.MouseDownBackColor = Color.Transparent;
+            btnHelp.FlatAppearance.MouseOverBackColor = Color.Transparent;
+            btnHelp.Click += (s, e) => new HelpForm().ShowDialog(this);
+
             chkAutoStart = new CheckBox { Location = new Point(12, 57), AutoSize = true };
             chkAutoStart.CheckedChanged += ChkAutoStart_CheckedChanged;
             lblPath = new Label { Location = new Point(12, 94), AutoSize = true };
             txtStoragePath = new TextBox { Location = new Point(80, 91), Size = new Size(600, 20), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right };
             btnBrowse = new Button { Size = new Size(110, 25), Anchor = AnchorStyles.Top | AnchorStyles.Right };
             btnBrowse.Click += BtnBrowse_Click;
-            topPanel.Controls.AddRange(new Control[] { btnStart, btnStop, lblStatus, btnSettings, chkAutoStart, lblPath, txtStoragePath, btnBrowse });
+            topPanel.Controls.AddRange(new Control[] { btnStart, btnStop, lblStatus, btnSettings, btnHelp, chkAutoStart, lblPath, txtStoragePath, btnBrowse });
 
             mainTabControl = new TabControl { Dock = DockStyle.Fill };
             mainTabControl.SelectedIndexChanged += MainTabControl_SelectedIndexChanged;
@@ -271,34 +312,34 @@ namespace Recap
             tabPageStats = new TabPage("Статистика");
 
             statsTabControl = new TabControl { Dock = DockStyle.Fill };
-            
+
             tabPageHeatmap = new TabPage("Тепловая карта");
             tabPageCharts = new TabPage("Диаграммы");
 
             btnPrevMonth = new Button { Location = new Point(12, 8), Size = new Size(100, 28), Text = "<" };
             lblMonth = new Label { Location = new Point(120, 14), Size = new Size(200, 20), Font = new Font(this.Font.FontFamily, 10, FontStyle.Bold) };
             btnNextMonth = new Button { Location = new Point(328, 8), Size = new Size(100, 28), Text = ">" };
-            
+
             var btnRefresh = new Button { Location = new Point(440, 8), Size = new Size(100, 28), Text = "Refresh" };
 
             activityHeatmap = new ActivityHeatmap { Location = new Point(12, 40), Size = new Size(tabPageHeatmap.ClientSize.Width - 24, tabPageHeatmap.ClientSize.Height - 52), Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right };
-            
+
             tabPageHeatmap.Controls.AddRange(new Control[] { btnPrevMonth, lblMonth, btnNextMonth, btnRefresh, activityHeatmap });
 
             chartsView = new ChartsView();
             tabPageCharts.Controls.Add(chartsView);
 
             tabPageHourly = new TabPage("Активность по часам");
-            
+
             cmbHourlyPeriod = new ComboBox { Location = new Point(12, 12), Width = 150, DropDownStyle = ComboBoxStyle.DropDownList };
             lblHourlyCustom = new Label { Location = new Point(170, 15), AutoSize = true, Text = "Период:", Visible = false };
             dtpHourlyStart = new DateTimePicker { Location = new Point(230, 12), Width = 100, Format = DateTimePickerFormat.Short, Visible = false };
             dtpHourlyEnd = new DateTimePicker { Location = new Point(340, 12), Width = 100, Format = DateTimePickerFormat.Short, Visible = false };
-            
-            hourlyActivityHeatmap = new HourlyActivityHeatmap 
-            { 
-                Location = new Point(12, 50), 
-                Size = new Size(tabPageHourly.ClientSize.Width - 24, tabPageHourly.ClientSize.Height - 62), 
+
+            hourlyActivityHeatmap = new HourlyActivityHeatmap
+            {
+                Location = new Point(12, 50),
+                Size = new Size(tabPageHourly.ClientSize.Width - 24, tabPageHourly.ClientSize.Height - 62),
                 Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
                 BackColor = Color.FromArgb(243, 243, 243),
                 ForeColor = Color.Black,
@@ -309,10 +350,10 @@ namespace Recap
 
             statsTabControl.TabPages.Add(tabPageHeatmap);
             statsTabControl.TabPages.Add(tabPageCharts);
-            statsTabControl.TabPages.Add(tabPageHourly);    
+            statsTabControl.TabPages.Add(tabPageHourly);
             tabPageStats.Controls.Add(statsTabControl);
             datePicker = new DateTimePicker { Location = new Point(12, 15), Format = DateTimePickerFormat.Short, Width = 100 };
-            datePicker.ValueChanged += (s, e) => 
+            datePicker.ValueChanged += (s, e) =>
             {
                 if (!_suppressDateEvent) _historyViewController?.LoadFramesForDate(datePicker.Value);
             };
@@ -320,7 +361,7 @@ namespace Recap
             var dateMenu = new ContextMenuStrip();
             dateMenu.Items.Add("Select Range...", null, (s, e) => ShowRangeSelectionDialog());
             datePicker.ContextMenuStrip = dateMenu;
-            
+
             chkGlobalSearch = new CheckBox { Location = new Point(tabPageView.ClientSize.Width - 162, 10), AutoSize = true, Anchor = AnchorStyles.Top | AnchorStyles.Left, Text = "Global Search" };
             chkGlobalSearch.CheckedChanged += ChkGlobalSearch_CheckedChanged;
 
@@ -341,7 +382,16 @@ namespace Recap
 
             lblAppFilter = new Label { Location = new Point(tabPageView.ClientSize.Width - 182, 75), Anchor = AnchorStyles.Top | AnchorStyles.Left, AutoSize = true };
             txtAppSearch = new TextBox { Location = new Point(tabPageView.ClientSize.Width - 182, 90), Size = new Size(170, 20), Anchor = AnchorStyles.Top | AnchorStyles.Left };
+            txtAppSearch.TextChanged += TxtAppSearch_TextChanged;
             lstAppFilter = new DarkListBox { Location = new Point(tabPageView.ClientSize.Width - 182, 115), Size = new Size(170, tabPageView.ClientSize.Height - 125), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom };
+            lstNotes = new DarkListBox { Location = new Point(tabPageView.ClientSize.Width - 182, 115), Size = new Size(170, tabPageView.ClientSize.Height - 125), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom, Visible = false };
+            lstNotes.SelectedIndexChanged += LstNotes_SelectedIndexChanged;
+            lstNotes.MouseDown += LstNotes_MouseDown;
+
+            _ctxMenuNotes = new ContextMenuStrip();
+            var deleteNoteItem = new ToolStripMenuItem(Localization.Get("deleteNote"));
+            deleteNoteItem.Click += DeleteNoteItem_Click;
+            _ctxMenuNotes.Items.Add(deleteNoteItem);
 
             timeTrackBar = new TrackBar { Location = new Point(190, 15), Size = new Size(tabPageView.ClientSize.Width - 364, 45), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, TickStyle = TickStyle.None, Minimum = 0, Maximum = 100 };
             lblTime = new Label { Name = "lblTime", AutoSize = true, Location = new Point(timeTrackBar.Right - 66, timeTrackBar.Bottom + -22), TextAlign = ContentAlignment.TopRight, Anchor = AnchorStyles.Top | AnchorStyles.Right };
@@ -358,14 +408,14 @@ namespace Recap
             MainVideoView = new VideoView { Location = new Point(12, 100), Size = new Size(tabPageView.ClientSize.Width - 214, tabPageView.ClientSize.Height - 112), Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left, Visible = false, MediaPlayer = MainMediaPlayer };
             MainVideoView.DoubleClick += BtnFullscreen_Click;
 
-            tabPageView.Controls.AddRange(new Control[] { datePicker, timeTrackBar, lblTime, chkGlobalSearch, lblOcrSearch, txtOcrSearch, lblAppFilter, txtAppSearch, lstAppFilter, chkAutoScroll, btnFullscreen, lblInfo, lblFormatBadge, MainPictureBox, MainVideoView });
+            tabPageView.Controls.AddRange(new Control[] { datePicker, timeTrackBar, lblTime, chkGlobalSearch, lblOcrSearch, txtOcrSearch, lblAppFilter, txtAppSearch, lstAppFilter, lstNotes, chkAutoScroll, btnFullscreen, lblInfo, lblFormatBadge, MainPictureBox, MainVideoView });
             lblFormatBadge.BringToFront();
 
             mainTabControl.TabPages.Add(tabPageView);
             mainTabControl.TabPages.Add(tabPageStats);
             this.Controls.Add(mainTabControl);
             this.Controls.Add(topPanel);
-            
+
             UpdateLocalization();
         }
 
@@ -375,9 +425,45 @@ namespace Recap
             if (panel != null)
             {
                 btnSettings.Location = new Point(panel.ClientSize.Width - 142, 12);
+                btnHelp.Location = new Point(panel.ClientSize.Width - 142 - 25, 17);
                 btnBrowse.Location = new Point(panel.ClientSize.Width - 122, 89);
                 txtStoragePath.Width = panel.ClientSize.Width - 212;
             }
+        }
+
+        private Bitmap GenerateInfoIcon(int size)
+        {
+            Bitmap bmp = new Bitmap(size, size);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+                g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+                g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+
+                g.Clear(Color.Transparent);
+
+                using (System.Drawing.Drawing2D.GraphicsPath path = new System.Drawing.Drawing2D.GraphicsPath())
+                {
+                    using (FontFamily fontFamily = new FontFamily("Times New Roman"))
+                    using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                    {
+                        float emSize = size * 0.85f;
+                        RectangleF rect = new RectangleF(0, 0, size, size);
+
+                        path.AddString("i", fontFamily, (int)(FontStyle.Bold | FontStyle.Italic), emSize, rect, sf);
+                    }
+
+                    using (Pen pen = new Pen(Color.Black, 2.0f))
+                    {
+                        pen.LineJoin = System.Drawing.Drawing2D.LineJoin.Round;
+                        g.DrawPath(pen, path);
+                    }
+
+                    g.FillPath(Brushes.White, path);
+                }
+            }
+            return bmp;
         }
 
         public void NavigateFrames(int offset) => _historyViewController.NavigateFrames(offset);
@@ -406,7 +492,7 @@ namespace Recap
                 if (_captureController != null) _captureController.DayChanged -= OnDayChanged;
 
                 _captureController?.Dispose();
-                _screenshotService?.Dispose();   
+                _screenshotService?.Dispose();
                 _historyViewController?.Dispose();
                 _statisticsViewController?.Dispose();
                 _iconManager.Dispose();
@@ -425,6 +511,28 @@ namespace Recap
         private async void MainForm_Load(object sender, EventArgs e)
         {
             _uiStateManager.SetControlsEnabled(false, datePicker, timeTrackBar, lstAppFilter);
+
+            if (_startMinimized)
+            {
+                await Task.Delay(4000);
+            }
+            if (_currentSettings.MonitorDeviceName != "AllScreens")
+            {
+                bool monitorExists = false;
+                foreach (var s in Screen.AllScreens)
+                {
+                    if (s.DeviceName == _currentSettings.MonitorDeviceName)
+                    {
+                        monitorExists = true;
+                        break;
+                    }
+                }
+                if (!monitorExists)
+                {
+                    DebugLogger.Log("Saved monitor not found at startup. Will use Primary.");
+                }
+            }
+
             await _historyViewController.LoadFramesForDate(datePicker.Value);
             _uiStateManager.SetControlsEnabled(true, datePicker, timeTrackBar, lstAppFilter);
             UpdateLayout();
@@ -451,7 +559,7 @@ namespace Recap
                         if (form.DontShowAgain)
                         {
                             _currentSettings.SuppressExtensionWarning = true;
-                            SaveSettings(); 
+                            SaveSettings();
                         }
                     }
                 }));
@@ -550,18 +658,18 @@ namespace Recap
         private void BtnStart_Click(object sender, EventArgs e) => StartCapture();
         private void BtnStop_Click(object sender, EventArgs e) => StopCapture();
         private void OnShowClicked(object sender, EventArgs e) { Show(); WindowState = FormWindowState.Normal; Activate(); }
-        private void OnExitClicked(object sender, EventArgs e) 
-        { 
+        private void OnExitClicked(object sender, EventArgs e)
+        {
             _ocrService?.Stop();
-            notifyIcon.Visible = false; 
-            Application.Exit(); 
+            notifyIcon.Visible = false;
+            Application.Exit();
         }
 
         private async void BtnSettings_Click(object sender, EventArgs e)
         {
             try
             {
-                List<MiniFrame> cachedFrames = null; 
+                List<MiniFrame> cachedFrames = null;
                 string cachedFilter = null;
                 int cachedIndex = -1;
                 bool canRestoreState = false;
@@ -592,21 +700,21 @@ namespace Recap
                         if (MainMediaPlayer != null)
                         {
                             if (MainMediaPlayer.IsPlaying) MainMediaPlayer.Stop();
-                            
-                            if (MainVideoView != null) 
+
+                            if (MainVideoView != null)
                             {
                                 MainVideoView.MediaPlayer = null;
                                 MainVideoView.Visible = false;
                             }
-                            
+
                             MainMediaPlayer.Dispose();
                             MainMediaPlayer = null;
                         }
 
                         _currentSettings = settingsForm.UpdatedSettings;
                         SaveSettings();
-                        LoadSettingsAndApply(); 
-                        UpdateLocalization(); 
+                        LoadSettingsAndApply();
+                        UpdateLocalization();
 
                         if (oldStoragePath == _currentSettings.StoragePath &&
                             oldGlobalSearch == _currentSettings.GlobalSearch)
@@ -629,7 +737,7 @@ namespace Recap
                         {
                             await _historyViewController.LoadFramesForDate(datePicker.Value);
                         }
-                        
+
                         _uiStateManager.SetControlsEnabled(true, datePicker, timeTrackBar, lstAppFilter);
 
                         if (wasCapturing) StartCapture();
@@ -701,7 +809,7 @@ namespace Recap
             {
                 if (datePicker.Value.Date != DateTime.Today)
                 {
-                    datePicker.Value = DateTime.Today;   
+                    datePicker.Value = DateTime.Today;
                 }
                 else
                 {
@@ -726,26 +834,26 @@ namespace Recap
             int gap = 20;
             int minListWidth = 180;
 
-            int topOffset = 100;      
+            int topOffset = 100;
             int bottomMargin = 12;
             int availableHeight = tabPageView.ClientSize.Height - topOffset - bottomMargin;
             if (availableHeight <= 0) return;
 
             int maxPbWidth = tabPageView.ClientSize.Width - leftMargin - gap - minListWidth - rightMargin;
-            
+
             int finalPbWidth = maxPbWidth;
             int finalPbHeight = availableHeight;
-            
+
             if (finalPbWidth < 100) finalPbWidth = 100;
             if (finalPbHeight < 60) finalPbHeight = 60;
 
             if (MainPictureBox.Width != finalPbWidth || MainPictureBox.Height != finalPbHeight)
             {
                 MainPictureBox.SetBounds(leftMargin, topOffset, finalPbWidth, finalPbHeight);
-                MainPictureBox.SizeMode = PictureBoxSizeMode.StretchImage;    
+                MainPictureBox.SizeMode = PictureBoxSizeMode.StretchImage;
                 MainPictureBox.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             }
-            
+
             if (MainVideoView != null && (MainVideoView.Width != finalPbWidth || MainVideoView.Height != finalPbHeight))
             {
                 MainVideoView.SetBounds(leftMargin, topOffset, finalPbWidth, finalPbHeight);
@@ -764,10 +872,11 @@ namespace Recap
             lblAppFilter.Top = 75;
             txtAppSearch.SetBounds(listLeft, 90, listWidth, txtAppSearch.Height);
             lstAppFilter.SetBounds(listLeft, 115, listWidth, tabPageView.ClientSize.Height - 115 - bottomMargin);
-            
+            lstNotes.SetBounds(listLeft, 115, listWidth, tabPageView.ClientSize.Height - 115 - bottomMargin);
+
             chkGlobalSearch.Left = listLeft;
-            
-            int trackBarLeft = 110;    
+
+            int trackBarLeft = 110;
             int trackBarRightLimit = listLeft - 15;
             int newTrackBarWidth = trackBarRightLimit - trackBarLeft;
 
@@ -785,7 +894,7 @@ namespace Recap
 
         public bool PreFilterMessage(ref Message m)
         {
-            if (m.Msg == 0x020A && Form.ActiveForm == this)  
+            if (m.Msg == 0x020A && Form.ActiveForm == this)
             {
                 int delta = (short)((m.WParam.ToInt64() >> 16) & 0xFFFF);
 
@@ -793,13 +902,13 @@ namespace Recap
                 {
                     int frames = (delta > 0 ? 100 : -100);
                     NavigateFrames(frames);
-                    return true;    
+                    return true;
                 }
                 else if ((Control.ModifierKeys & Keys.Control) == Keys.Control)
                 {
                     int frames = (delta > 0 ? 10 : -10);
                     NavigateFrames(frames);
-                    return true;    
+                    return true;
                 }
             }
             return false;
@@ -807,6 +916,18 @@ namespace Recap
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (keyData == Keys.B && !IsTextBoxFocused())
+            {
+                ShowAddNoteDialog();
+                return true;
+            }
+
+            if (keyData == (Keys.Control | Keys.B))
+            {
+                ToggleNotesMode();
+                return true;
+            }
+
             if (IsTextBoxFocused())
             {
                 return base.ProcessCmdKey(ref msg, keyData);
@@ -826,6 +947,40 @@ namespace Recap
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
+        private void TxtAppSearch_TextChanged(object sender, EventArgs e)
+        {
+            if (_isNotesMode)
+            {
+                string searchText = txtAppSearch.Text.Trim();
+                if (string.IsNullOrWhiteSpace(searchText))
+                {
+                    _historyViewController.ReloadNotes();
+                    return;
+                }
+
+                var notes = _ocrDb.SearchNotes(searchText);
+                lstNotes.Items.Clear();
+                foreach (var note in notes)
+                {
+                    string displayName = note.Title;
+                    displayName = $"{new DateTime(note.Timestamp):dd.MM.yyyy HH:mm} {note.Title}";
+
+                    lstNotes.Items.Add(new FilterItem
+                    {
+                        RawName = note.Title,
+                        DisplayName = displayName,
+                        DurationMs = 0,
+                        FrameCount = 0,
+                        Level = 0,
+                        HasChildren = false,
+                        IsNote = true,
+                        NoteTimestamp = note.Timestamp,
+                        NoteDescription = note.Description
+                    });
+                }
+            }
+        }
+
         private void TxtOcrSearch_TextChanged(object sender, EventArgs e)
         {
             string text = txtOcrSearch.Text;
@@ -833,7 +988,7 @@ namespace Recap
             {
                 long? start = null;
                 long? end = null;
-                
+
                 if (!chkGlobalSearch.Checked)
                 {
                     var date = datePicker.Value.Date;
@@ -841,10 +996,10 @@ namespace Recap
                     end = date.AddDays(1).Ticks - 1;
                 }
 
-                Task.Run(() => 
+                Task.Run(() =>
                 {
                     var suggestions = _ocrDb.GetSearchSuggestions(text, 10, start, end);
-                    this.Invoke((Action)(() => 
+                    this.Invoke((Action)(() =>
                     {
                         if (!txtOcrSearch.Text.StartsWith(text.Substring(0, 2))) return;
 
@@ -916,7 +1071,7 @@ namespace Recap
 
                 var lblStart = new Label { Text = "Start Date:", Location = new Point(20, 20), AutoSize = true };
                 var dtpStart = new DateTimePicker { Location = new Point(100, 17), Format = DateTimePickerFormat.Short, Width = 150, Value = datePicker.Value };
-                
+
                 var lblEnd = new Label { Text = "End Date:", Location = new Point(20, 60), AutoSize = true };
                 var dtpEnd = new DateTimePicker { Location = new Point(100, 57), Format = DateTimePickerFormat.Short, Width = 150, Value = datePicker.Value };
 
@@ -943,5 +1098,76 @@ namespace Recap
                 }
             }
         }
+
+        private void ShowAddNoteDialog()
+        {
+            long currentTimestamp = _historyViewController.GetCurrentTimestamp();
+            if (currentTimestamp <= 0) return;
+
+            using (var form = new NoteForm())
+            {
+                if (form.ShowDialog(this) == DialogResult.OK)
+                {
+                    if (string.IsNullOrWhiteSpace(form.NoteTitle)) return;
+
+                    if (_ocrDb.AddNote(currentTimestamp, form.NoteTitle, form.NoteDescription))
+                    {
+                        if (_isNotesMode)
+                        {
+                            _historyViewController.ReloadNotes();
+                        }
+                    }
+                    else
+                    {
+                        MessageBox.Show("A note for this frame already exists.", Localization.Get("error"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            }
+        }
+
+        private void ToggleNotesMode()
+        {
+            _isNotesMode = !_isNotesMode;
+            lstAppFilter.Visible = !_isNotesMode;
+            lstNotes.Visible = _isNotesMode;
+
+            lblAppFilter.Text = _isNotesMode ? Localization.Get("notes") : Localization.Get("filterApps");
+            txtAppSearch.Text = "";
+
+            if (_isNotesMode)
+            {
+                _historyViewController.ReloadNotes();
+            }
+        }
+
+        private void LstNotes_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (lstNotes.SelectedItem is FilterItem note && note.IsNote)
+            {
+                _historyViewController.JumpToTimestamp(note.NoteTimestamp);
+            }
+        }
+
+        private void LstNotes_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Right)
+            {
+                int index = lstNotes.IndexFromPoint(e.Location);
+                if (index != ListBox.NoMatches)
+                {
+                    lstNotes.SelectedIndex = index;
+                    _ctxMenuNotes.Show(lstNotes, e.Location);
+                }
+            }
+        }
+
+        private void DeleteNoteItem_Click(object sender, EventArgs e)
+        {
+            if (lstNotes.SelectedItem is FilterItem note && note.IsNote)
+            {
+                _ocrDb.DeleteNote(note.NoteTimestamp);
+                lstNotes.Items.Remove(note);
+            }
+        }
     }
-}    
+}

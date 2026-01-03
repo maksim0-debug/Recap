@@ -66,6 +66,12 @@ namespace Recap
         private DateTime _lastNotifiedDate = DateTime.MinValue;
         public event Action<DateTime> CurrentDateChanged;
 
+        private ContextMenuStrip _contextMenu;
+        private OcrTextForm _ocrTextForm;
+        private ToolStripMenuItem _copyImageItem;
+        private ToolStripMenuItem _viewTextItem;
+        private DarkListBox _lstNotes;
+
         public HistoryViewController(
             PictureBox mainPictureBox,
             VideoView mainVideoView,
@@ -90,6 +96,8 @@ namespace Recap
             _ocrDb = ocrDb;
             _txtOcrSearch = txtOcrSearch;
 
+            InitializeContextMenu();
+
             _badgeToolTip = new ToolTip();
             GenerateIcons();
 
@@ -111,6 +119,160 @@ namespace Recap
                 _txtOcrSearch.KeyDown += OnOcrSearchKeyDown;
                 _txtOcrSearch.TextChanged += OnOcrSearchTextChanged;
             }
+        }
+
+        public void SetNotesListBox(DarkListBox lstNotes)
+        {
+            _lstNotes = lstNotes;
+        }
+
+        public long GetCurrentTimestamp()
+        {
+            if (_filteredFrames != null && _currentFrameIndex >= 0 && _currentFrameIndex < _filteredFrames.Count)
+            {
+                return _filteredFrames[_currentFrameIndex].TimestampTicks;
+            }
+            return -1;
+        }
+
+        public void JumpToTimestamp(long timestamp)
+        {
+            if (_filteredFrames == null) return;
+            
+            int index = _filteredFrames.FindIndex(f => f.TimestampTicks == timestamp);
+            if (index != -1)
+            {
+                _wantedFrameIndex = index;
+                _currentFrameIndex = -1;   
+                _timelineController.CurrentIndex = index;
+            }
+            else
+            {
+                var frame = _frameRepository.GetFrameIndex(timestamp);
+                if (frame.TimestampTicks > 0)
+                {
+                }
+            }
+        }
+
+        public void ReloadNotes()
+        {
+            if (_lstNotes == null || _ocrDb == null) return;
+
+            List<OcrDatabase.NoteItem> notes;
+            if (_isGlobalMode)
+            {
+                notes = _ocrDb.SearchNotes(""); 
+            }
+            else
+            {
+                notes = _ocrDb.GetNotesForPeriod(_currentStartDate, _currentEndDate.AddDays(1));
+            }
+
+            _lstNotes.Items.Clear();
+            foreach (var note in notes)
+            {
+                string displayName = note.Title;
+                if (_isGlobalMode)
+                {
+                    displayName = $"{new DateTime(note.Timestamp):dd.MM.yyyy HH:mm} {note.Title}";
+                }
+                else
+                {
+                    displayName = $"{new DateTime(note.Timestamp):HH:mm:ss} {note.Title}";
+                }
+
+                _lstNotes.Items.Add(new FilterItem 
+                { 
+                    RawName = note.Title, 
+                    DisplayName = displayName, 
+                    DurationMs = 0, 
+                    FrameCount = 0,
+                    Level = 0,
+                    HasChildren = false,
+                    IsNote = true,
+                    NoteTimestamp = note.Timestamp,
+                    NoteDescription = note.Description
+                });
+            }
+        }
+
+        private void InitializeContextMenu()
+        {
+            _contextMenu = new ContextMenuStrip();
+            _copyImageItem = new ToolStripMenuItem(Localization.Get("copyImage"));
+            _copyImageItem.Click += (s, e) => CopyImageToClipboard();
+            
+            _viewTextItem = new ToolStripMenuItem(Localization.Get("viewText"));
+            _viewTextItem.Click += (s, e) => ShowOcrText();
+
+            _contextMenu.Items.Add(_copyImageItem);
+            _contextMenu.Items.Add(_viewTextItem);
+
+            _mainPictureBox.ContextMenuStrip = _contextMenu;
+        }
+
+        public void UpdateLocalization()
+        {
+            if (_copyImageItem != null) _copyImageItem.Text = Localization.Get("copyImage");
+            if (_viewTextItem != null) _viewTextItem.Text = Localization.Get("viewText");
+            if (_ocrTextForm != null && !_ocrTextForm.IsDisposed) _ocrTextForm.UpdateLocalization();
+        }
+
+        private void CopyImageToClipboard()
+        {
+            if (_mainPictureBox.Image != null)
+            {
+                Clipboard.SetImage(_mainPictureBox.Image);
+            }
+        }
+
+        private void ShowOcrText()
+        {
+            if (_filteredFrames == null || _currentFrameIndex < 0 || _currentFrameIndex >= _filteredFrames.Count) return;
+
+            var miniFrame = _filteredFrames[_currentFrameIndex];
+            string text = GetOcrTextForFrame(miniFrame.TimestampTicks);
+            string info = GetFrameInfo(miniFrame);
+
+            if (_ocrTextForm == null || _ocrTextForm.IsDisposed)
+            {
+                _ocrTextForm = new OcrTextForm(text, info, this);
+                _ocrTextForm.Show();
+            }
+            else
+            {
+                _ocrTextForm.UpdateText(text, info);
+                _ocrTextForm.BringToFront();
+            }
+        }
+
+        private string GetOcrTextForFrame(long timestamp)
+        {
+            try
+            {
+                var compressedData = _ocrDb.GetTextData(timestamp);
+                if (compressedData != null)
+                {
+                    var words = BinaryCoordinatesPacker.Unpack(compressedData);
+                    var sb = new StringBuilder();
+                    foreach (var word in words)
+                    {
+                        sb.Append(word.T).Append(" ");
+                    }
+                    return sb.ToString();
+                }
+            }
+            catch { }
+            return "";
+        }
+
+        private string GetFrameInfo(MiniFrame frame)
+        {
+            var time = frame.GetTime();
+            string appName = "";
+            if (_appMap.TryGetValue(frame.AppId, out string name)) appName = name;
+            return $"{time:yyyy-MM-dd HH:mm:ss} - {appName}";
         }
 
         private void OnOcrSearchTextChanged(object sender, EventArgs e)
@@ -148,6 +310,13 @@ namespace Recap
                     var miniFrame = _filteredFrames[_currentFrameIndex];
 
                     _timelineController.UpdateTimeLabel(miniFrame.GetTime(), _isGlobalMode);
+
+                    if (_ocrTextForm != null && !_ocrTextForm.IsDisposed)
+                    {
+                        string text = GetOcrTextForFrame(miniFrame.TimestampTicks);
+                        string info = GetFrameInfo(miniFrame);
+                        _ocrTextForm.BeginInvoke((Action)(() => _ocrTextForm.UpdateText(text, info)));
+                    }
 
                     DateTime frameDate = miniFrame.GetTime().Date;
                     if (_lastNotifiedDate != frameDate)
@@ -473,6 +642,11 @@ namespace Recap
             await _appFilterController.SetDataAsync(_allLoadedFrames, _appMap);
             ApplyAppFilterAndDisplay(isLiveUpdate: false);
 
+            if (_lstNotes != null && _lstNotes.Visible)
+            {
+                ReloadNotes();
+            }
+
             if (parentForm != null) parentForm.Cursor = Cursors.Default;
             _isLoading = false;
         }
@@ -585,6 +759,10 @@ namespace Recap
                         int foundIndex = _filteredFrames.FindIndex(f => f.TimestampTicks >= currentTimestamp);
                         if (foundIndex != -1) targetIndex = foundIndex;
                     }
+                    else if (_isInitialLoad && _filteredFrames.Count > 0)
+                    {
+                        targetIndex = _filteredFrames.Count - 1;
+                    }
 
                     var targetFrame = _frameRepository.GetFrameIndex(_filteredFrames[targetIndex].TimestampTicks);
                     if (targetIndex > 0 && targetFrame.IsVideoFrame)
@@ -598,9 +776,11 @@ namespace Recap
                 }
                 else
                 {
-                    if (_currentFrameIndex == -1 && _filteredFrames.Count == 1)
+                    if (_currentFrameIndex == -1 && _filteredFrames.Count > 0)
                     {
-                        _wantedFrameIndex = 0;
+                        int targetIndex = _filteredFrames.Count - 1;
+                        _wantedFrameIndex = targetIndex;
+                        _timelineController.CurrentIndex = targetIndex;
                     }
                 }
             }
@@ -728,6 +908,13 @@ namespace Recap
 
                 _timelineController.SetFrames(_filteredFrames, true, false);
                 _timelineController.UpdateInfoLabel();
+
+                if (_currentFrameIndex == -1 && _filteredFrames.Count > 0)
+                {
+                    int newIndex = _filteredFrames.Count - 1;
+                    _wantedFrameIndex = newIndex;
+                    _timelineController.CurrentIndex = newIndex;
+                }
             }
         }
 
@@ -819,6 +1006,8 @@ namespace Recap
             if (_lblFormatBadge != null) _lblFormatBadge.Image = null;
 
             _iconVideo?.Dispose(); _iconImage?.Dispose();
+            _contextMenu?.Dispose();
+            if (_ocrTextForm != null && !_ocrTextForm.IsDisposed) _ocrTextForm.Close();
         }
     }
 }

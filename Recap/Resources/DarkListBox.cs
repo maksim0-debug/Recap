@@ -51,7 +51,7 @@ namespace Recap
                 var item = Items[_lastTooltipIndex] as FilterItem;
                 if (item != null)
                 {
-                    _currentTooltipText = item.DisplayName;
+                    _currentTooltipText = item.IsNote ? item.NoteDescription : item.DisplayName;
                     Point cursor = this.PointToClient(Cursor.Position);
                     _toolTip.Show(_currentTooltipText, this, cursor.X + 10, cursor.Y + 20, 5000);
                 }
@@ -195,7 +195,7 @@ namespace Recap
             int iconX = bounds.X + 12 + indent;
             int iconY = bounds.Y + (bounds.Height - iconH) / 2;
 
-            if (IconManager != null)
+            if (IconManager != null && !item.IsNote)
             {
                 Image icon = IconManager.GetIcon(item.RawName);
                 if (icon != null)
@@ -210,7 +210,11 @@ namespace Recap
             }
 
             string rightText;
-            if (ShowFrameCount)
+            if (item.IsNote)
+            {
+                rightText = ""; 
+            }
+            else if (ShowFrameCount)
             {
                 rightText = $"{item.FrameCount} f";
             }

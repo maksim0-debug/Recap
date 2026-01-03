@@ -15,6 +15,7 @@ using Windows.Storage.Streams;
 
 using System.IO.Compression;
 using System.Text;
+using System.Threading;
 
 namespace Recap
 {
@@ -36,6 +37,7 @@ namespace Recap
         private readonly PerformanceCounter _processCpuCounter;
         private bool _isRunning;
         private OcrEngine _ocrEngine;
+        private readonly SemaphoreSlim _signal = new SemaphoreSlim(0);
 
         public bool EnableOCR { get; set; } = true;
         public bool EnableTextHighlighting { get; set; } = true;
@@ -118,6 +120,15 @@ namespace Recap
         public void Stop()
         {
             _isRunning = false;
+            _signal.Release();
+        }
+
+        public void SignalNewWork()
+        {
+            if (_signal.CurrentCount == 0)
+            {
+                _signal.Release();
+            }
         }
 
         private string _lastText = "";
@@ -161,7 +172,7 @@ namespace Recap
                     var unprocessed = _db.GetUnprocessedFrames();
                     if (unprocessed.Count == 0)
                     {
-                        await Task.Delay(200);
+                        await _signal.WaitAsync(2000);
                         continue;
                     }
 

@@ -285,10 +285,61 @@ namespace Recap
                         Name TEXT NOT NULL UNIQUE
                     );
                     CREATE INDEX IF NOT EXISTS idx_apps_name ON Apps(Name);
+
+                    -- Notes table
+                    CREATE TABLE IF NOT EXISTS Notes (
+                        ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                        Timestamp INTEGER NOT NULL UNIQUE,
+                        Title TEXT NOT NULL,
+                        Description TEXT
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_notes_timestamp ON Notes(Timestamp);
                 ";
                 using (var command = new SqliteCommand(sql, connection))
                 {
                     command.ExecuteNonQuery();
+                }
+
+                try
+                {
+                    bool migrationNeeded = false;
+                    using (var cmd = new SqliteCommand("SELECT sql FROM sqlite_master WHERE type='table' AND name='Notes'", connection))
+                    {
+                        var tableSql = cmd.ExecuteScalar() as string;
+                        if (tableSql != null && tableSql.Contains("Title TEXT NOT NULL UNIQUE"))
+                        {
+                            migrationNeeded = true;
+                        }
+                    }
+
+                    if (migrationNeeded)
+                    {
+                        DebugLogger.Log("Migrating Notes table to remove UNIQUE constraint on Title...");
+                        using (var transaction = connection.BeginTransaction())
+                        {
+                            using (var cmd = new SqliteCommand("CREATE TABLE Notes_new (ID INTEGER PRIMARY KEY AUTOINCREMENT, Timestamp INTEGER NOT NULL UNIQUE, Title TEXT NOT NULL, Description TEXT)", connection, transaction))
+                                cmd.ExecuteNonQuery();
+                            
+                            using (var cmd = new SqliteCommand("INSERT INTO Notes_new (ID, Timestamp, Title, Description) SELECT ID, Timestamp, Title, Description FROM Notes", connection, transaction))
+                                cmd.ExecuteNonQuery();
+
+                            using (var cmd = new SqliteCommand("DROP TABLE Notes", connection, transaction))
+                                cmd.ExecuteNonQuery();
+
+                            using (var cmd = new SqliteCommand("ALTER TABLE Notes_new RENAME TO Notes", connection, transaction))
+                                cmd.ExecuteNonQuery();
+
+                            using (var cmd = new SqliteCommand("CREATE INDEX IF NOT EXISTS idx_notes_timestamp ON Notes(Timestamp)", connection, transaction))
+                                cmd.ExecuteNonQuery();
+
+                            transaction.Commit();
+                        }
+                        DebugLogger.Log("Notes table migration completed.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugLogger.LogError("OcrDatabase.NotesMigration", ex);
                 }
 
                 try { using (var cmd = new SqliteCommand("ALTER TABLE FramesMeta ADD COLUMN DataOffset INTEGER DEFAULT 0;", connection)) cmd.ExecuteNonQuery(); } catch { }
@@ -1494,6 +1545,110 @@ namespace Recap
                     }
                 }
                 return results;
+            });
+        }
+
+        #endregion
+
+        #region Notes
+
+        public struct NoteItem
+        {
+            public long Timestamp;
+            public string Title;
+            public string Description;
+        }
+
+        public bool AddNote(long timestamp, string title, string description)
+        {
+            return ExecuteScalarWithRetry(connection =>
+            {
+                try
+                {
+                    using (var cmd = new SqliteCommand("INSERT INTO Notes (Timestamp, Title, Description) VALUES (@ts, @title, @desc)", connection))
+                    {
+                        cmd.Parameters.AddWithValue("@ts", timestamp);
+                        cmd.Parameters.AddWithValue("@title", title);
+                        cmd.Parameters.AddWithValue("@desc", description ?? "");
+                        cmd.ExecuteNonQuery();
+                        return true;
+                    }
+                }
+                catch (SqliteException ex)
+                {
+                    if (ex.SqliteErrorCode == 19)    
+                    {
+                        return false;
+                    }
+                    throw;
+                }
+            });
+        }
+
+        public List<NoteItem> GetNotesForPeriod(DateTime start, DateTime end)
+        {
+            return ExecuteScalarWithRetry(connection =>
+            {
+                var results = new List<NoteItem>();
+                long startTicks = start.Ticks;
+                long endTicks = end.Ticks;
+
+                using (var cmd = new SqliteCommand("SELECT Timestamp, Title, Description FROM Notes WHERE Timestamp BETWEEN @start AND @end ORDER BY Timestamp", connection))
+                {
+                    cmd.Parameters.AddWithValue("@start", startTicks);
+                    cmd.Parameters.AddWithValue("@end", endTicks);
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            results.Add(new NoteItem
+                            {
+                                Timestamp = reader.GetInt64(0),
+                                Title = reader.GetString(1),
+                                Description = reader.IsDBNull(2) ? "" : reader.GetString(2)
+                            });
+                        }
+                    }
+                }
+                return results;
+            });
+        }
+
+        public List<NoteItem> SearchNotes(string query)
+        {
+            return ExecuteScalarWithRetry(connection =>
+            {
+                var results = new List<NoteItem>();
+                string sql = "SELECT Timestamp, Title, Description FROM Notes WHERE Title LIKE @q OR Description LIKE @q ORDER BY Timestamp DESC";
+                using (var cmd = new SqliteCommand(sql, connection))
+                {
+                    cmd.Parameters.AddWithValue("@q", $"%{query}%");
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            results.Add(new NoteItem
+                            {
+                                Timestamp = reader.GetInt64(0),
+                                Title = reader.GetString(1),
+                                Description = reader.IsDBNull(2) ? "" : reader.GetString(2)
+                            });
+                        }
+                    }
+                }
+                return results;
+            });
+        }
+
+        public void DeleteNote(long timestamp)
+        {
+            ExecuteWithRetry(connection =>
+            {
+                using (var cmd = new SqliteCommand("DELETE FROM Notes WHERE Timestamp = @ts", connection))
+                {
+                    cmd.Parameters.AddWithValue("@ts", timestamp);
+                    cmd.ExecuteNonQuery();
+                }
             });
         }
 

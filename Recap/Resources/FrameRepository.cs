@@ -268,6 +268,7 @@ namespace Recap
         private List<FrameIndex> LoadFromSch(string schPath)
         {
             var frames = new List<FrameIndex>();
+            var stringCache = new Dictionary<string, string>();
             try
             {
                 using (var stream = new FileStream(schPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, IoBufferSize))
@@ -283,6 +284,13 @@ namespace Recap
 
                             byte[] nameBytes = reader.ReadBytes(nameLen);
                             string appName = Encoding.UTF8.GetString(nameBytes);
+
+                            if (!stringCache.TryGetValue(appName, out var cached))
+                            {
+                                stringCache[appName] = appName;
+                                cached = appName;
+                            }
+                            appName = cached;
                             
                             int dataLen = reader.ReadInt32();
                             if (dataLen < 0 || dataLen > 100_000_000) break; 
@@ -315,6 +323,8 @@ namespace Recap
         private List<FrameIndex> LoadFromCsv(string csvPath, Dictionary<string, string> stringCache)
         {
             var frames = new List<FrameIndex>();
+            if (stringCache == null) stringCache = new Dictionary<string, string>();
+
             try
             {
                 using (var reader = new StreamReader(csvPath, Encoding.UTF8))
@@ -335,15 +345,12 @@ namespace Recap
                                 appName = $"{appName}|{parts[3]}";
                             }
 
-                            if (stringCache != null)
+                            if (!stringCache.TryGetValue(appName, out var cached))
                             {
-                                if (!stringCache.TryGetValue(appName, out var cached))
-                                {
-                                    stringCache[appName] = appName;
-                                    cached = appName;
-                                }
-                                appName = cached;
+                                stringCache[appName] = appName;
+                                cached = appName;
                             }
+                            appName = cached;
 
                             var frame = new FrameIndex
                             {

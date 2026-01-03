@@ -17,6 +17,9 @@ namespace Recap
         public bool IsExpanded;
         public bool IsVideo;
         public string VideoId;
+        public bool IsNote;
+        public long NoteTimestamp;
+        public string NoteDescription;
 
         public override string ToString() => DisplayName;
     }
@@ -57,6 +60,7 @@ namespace Recap
         private Dictionary<string, NodeData> _cachedStats = new Dictionary<string, NodeData>();
         private long _cachedGlobalTotal = 0;
         private int _cachedGlobalFrameCount = 0;
+        private Dictionary<string, ParsedAppInfo> _parsedAppInfoCache = new Dictionary<string, ParsedAppInfo>();
 
         public AppFilterController(DarkListBox lstAppFilter, TextBox txtAppSearch, IconManager iconManager)
         {
@@ -78,6 +82,7 @@ namespace Recap
             _isLoading = true;
             _currentFrames = frames;
             _appMap = appMap;
+            _parsedAppInfoCache.Clear();
 
             DebugLogger.Log($"[AppFilter] SetDataAsync started for {frames.Count} frames.");
             var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -158,11 +163,24 @@ namespace Recap
             var durations = new long[count];
             var parsedInfos = new ParsedAppInfo[count];
 
+            var uniqueAppNames = new HashSet<string>();
+            foreach (var kvp in appMap)
+            {
+                uniqueAppNames.Add(kvp.Value);
+            }
+            
+            foreach (var name in uniqueAppNames)
+            {
+                if (!_parsedAppInfoCache.ContainsKey(name))
+                {
+                    _parsedAppInfoCache[name] = ParseAppInfo(name);
+                }
+            }
+
             var rangePartitioner = System.Collections.Concurrent.Partitioner.Create(0, count);
 
             Parallel.ForEach(rangePartitioner, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, range =>
             {
-                var localAppCache = new Dictionary<string, ParsedAppInfo>(100);
                 long localLastInterval = 3000;
 
                 for (int i = range.Item1; i < range.Item2; i++)
@@ -217,10 +235,14 @@ namespace Recap
                         }
                     }
 
-                    if (!localAppCache.TryGetValue(currentAppName, out var info))
+                    ParsedAppInfo info;
+                    lock (_parsedAppInfoCache)
                     {
-                        info = ParseAppInfo(currentAppName);
-                        localAppCache[currentAppName] = info;
+                        if (!_parsedAppInfoCache.TryGetValue(currentAppName, out info))
+                        {
+                            info = ParseAppInfo(currentAppName);
+                            _parsedAppInfoCache[currentAppName] = info;
+                        }
                     }
                     parsedInfos[i] = info;
                 }
@@ -313,13 +335,13 @@ namespace Recap
             }
 
             ParsedAppInfo info;
-            if (cache != null && cache.TryGetValue(currentAppName, out info))
+            if (_parsedAppInfoCache.TryGetValue(currentAppName, out info))
             {
             }
             else
             {
                 info = ParseAppInfo(currentAppName);
-                if (cache != null) cache[currentAppName] = info;
+                _parsedAppInfoCache[currentAppName] = info;
             }
 
             if (!stats.ContainsKey(info.EffectiveExe)) stats[info.EffectiveExe] = new NodeData();

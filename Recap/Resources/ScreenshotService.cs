@@ -17,6 +17,7 @@ namespace Recap
         private static readonly ImageCodecInfo JpegEncoder;
         private static readonly EncoderParameters EncoderParams;
         private Bitmap _reusableBitmap;
+        private Bitmap _reusableSmallBitmap;
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetDC(IntPtr hWnd);
@@ -83,6 +84,8 @@ namespace Recap
         {
             _reusableBitmap?.Dispose();
             _reusableBitmap = null;
+            _reusableSmallBitmap?.Dispose();
+            _reusableSmallBitmap = null;
         }
 
         public Task<(byte[] JpegBytes, byte[] NewHash, int IntervalMs)> TakeScreenshotAsync(byte[] previousHash, string saveFullResPath = null)
@@ -95,6 +98,8 @@ namespace Recap
 
                 int captureX = 0, captureY = 0, captureWidth = 0, captureHeight = 0;
 
+                Screen screenToCapture = null;
+
                 if (this.Settings.MonitorDeviceName == "AllScreens")
                 {
                     captureX = SystemInformation.VirtualScreen.X;
@@ -104,7 +109,6 @@ namespace Recap
                 }
                 else
                 {
-                    Screen screenToCapture = Screen.PrimaryScreen;
                     if (!string.IsNullOrEmpty(this.Settings.MonitorDeviceName))
                     {
                         foreach (var s in Screen.AllScreens)
@@ -116,14 +120,30 @@ namespace Recap
                             }
                         }
                     }
+
+                    if (screenToCapture == null || screenToCapture.Bounds.Width <= 0 || screenToCapture.Bounds.Height <= 0)
+                    {
+                        screenToCapture = Screen.PrimaryScreen;
+                    }
+
+                    if (screenToCapture == null || screenToCapture.Bounds.Width <= 0)
+                    {
+                        if (Screen.AllScreens.Length > 0)
+                            screenToCapture = Screen.AllScreens[0];
+                        else
+                            return ((byte[])null, previousHash, currentInterval);
+                    }
+
                     captureX = screenToCapture.Bounds.X;
                     captureY = screenToCapture.Bounds.Y;
                     captureWidth = screenToCapture.Bounds.Width;
                     captureHeight = screenToCapture.Bounds.Height;
                 }
-
                 try
                 {
+                    if (captureWidth <= 0 || captureHeight <= 0)
+                        return ((byte[])null, previousHash, currentInterval);
+
                     if (_reusableBitmap == null || _reusableBitmap.Width != captureWidth || _reusableBitmap.Height != captureHeight)
                     {
                         _reusableBitmap?.Dispose();
@@ -367,54 +387,58 @@ namespace Recap
 
         private unsafe byte[] GetDifferenceHash1024(Bitmap bmp, Rectangle rect)
         {
-            using (var smallBmp = new Bitmap(33, 32))
+            if (_reusableSmallBitmap == null)
             {
-                using (var g = Graphics.FromImage(smallBmp))
+                _reusableSmallBitmap = new Bitmap(33, 32, PixelFormat.Format32bppRgb);
+            }
+
+            var smallBmp = _reusableSmallBitmap;
+
+            using (var g = Graphics.FromImage(smallBmp))
+            {
+                g.InterpolationMode = InterpolationMode.Bilinear;
+                g.DrawImage(bmp, new Rectangle(0, 0, 33, 32), rect, GraphicsUnit.Pixel);
+            }
+
+            byte[] hash = new byte[128];
+
+            BitmapData data = smallBmp.LockBits(new Rectangle(0, 0, 33, 32), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
+            try
+            {
+                byte* ptr = (byte*)data.Scan0;
+                int stride = data.Stride;
+
+                for (int y = 0; y < 32; y++)
                 {
-                    g.InterpolationMode = InterpolationMode.Bilinear;
-                    g.DrawImage(bmp, new Rectangle(0, 0, 33, 32), rect, GraphicsUnit.Pixel);
-                }
-
-                byte[] hash = new byte[128];      
-
-                BitmapData data = smallBmp.LockBits(new Rectangle(0, 0, 33, 32), ImageLockMode.ReadOnly, PixelFormat.Format32bppRgb);
-                try
-                {
-                    byte* ptr = (byte*)data.Scan0;
-                    int stride = data.Stride;
-
-                    for (int y = 0; y < 32; y++)
+                    byte* row = ptr + (y * stride);
+                    for (int x = 0; x < 32; x++)
                     {
-                        byte* row = ptr + (y * stride);
-                        for (int x = 0; x < 32; x++)
+                        byte b1 = row[x * 4];
+                        byte g1 = row[x * 4 + 1];
+                        byte r1 = row[x * 4 + 2];
+                        long bright1 = r1 + g1 + b1;
+
+                        byte b2 = row[(x + 1) * 4];
+                        byte g2 = row[(x + 1) * 4 + 1];
+                        byte r2 = row[(x + 1) * 4 + 2];
+                        long bright2 = r2 + g2 + b2;
+
+                        if (bright1 > bright2)
                         {
-                            byte b1 = row[x * 4];
-                            byte g1 = row[x * 4 + 1];
-                            byte r1 = row[x * 4 + 2];
-                            long bright1 = r1 + g1 + b1;    
-
-                            byte b2 = row[(x + 1) * 4];
-                            byte g2 = row[(x + 1) * 4 + 1];
-                            byte r2 = row[(x + 1) * 4 + 2];
-                            long bright2 = r2 + g2 + b2;
-
-                            if (bright1 > bright2)
-                            {
-                                int bitIndex = y * 32 + x;
-                                int byteIndex = bitIndex / 8;
-                                int bitInByte = bitIndex % 8;
-                                hash[byteIndex] |= (byte)(1 << bitInByte);
-                            }
+                            int bitIndex = y * 32 + x;
+                            int byteIndex = bitIndex / 8;
+                            int bitInByte = bitIndex % 8;
+                            hash[byteIndex] |= (byte)(1 << bitInByte);
                         }
                     }
                 }
-                finally
-                {
-                    smallBmp.UnlockBits(data);
-                }
-
-                return hash;
             }
+            finally
+            {
+                smallBmp.UnlockBits(data);
+            }
+
+            return hash;
         }
 
         private int GetHammingDistance(byte[] hash1, byte[] hash2)

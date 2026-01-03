@@ -25,13 +25,15 @@ namespace Recap
 
         private readonly OcrDatabase _ocrDb;
         private readonly string _tempOcrPath;
+        private readonly OcrService _ocrService;
 
-        public CaptureController(ScreenshotService screenshotService, FrameRepository frameRepository, AppSettings settings, OcrDatabase ocrDb)
+        public CaptureController(ScreenshotService screenshotService, FrameRepository frameRepository, AppSettings settings, OcrDatabase ocrDb, OcrService ocrService = null)
         {
             _screenshotService = screenshotService;
             _frameRepository = frameRepository;
             _settings = settings;
             _ocrDb = ocrDb;
+            _ocrService = ocrService;
 
             _screenshotService.Settings = _settings;
 
@@ -149,6 +151,7 @@ namespace Recap
                             string finalPath = System.IO.Path.Combine(_tempOcrPath, newFrame.Value.TimestampTicks + ".jpg");
                             System.IO.File.Move(tempFile, finalPath);
                             _ocrDb?.AddFrame(newFrame.Value.TimestampTicks, finalAppName);
+                            _ocrService?.SignalNewWork();
                         }
                         catch (Exception ex)
                         {
