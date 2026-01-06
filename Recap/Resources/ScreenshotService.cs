@@ -109,16 +109,46 @@ namespace Recap
                 }
                 else
                 {
+                    var deviceIds = !string.IsNullOrEmpty(this.Settings.MonitorDeviceId) ? DisplayHelper.GetMonitorDeviceIds() : null;
+
                     if (!string.IsNullOrEmpty(this.Settings.MonitorDeviceName))
                     {
                         foreach (var s in Screen.AllScreens)
                         {
                             if (s.DeviceName == this.Settings.MonitorDeviceName)
                             {
-                                screenToCapture = s;
+                                if (deviceIds != null && deviceIds.ContainsKey(s.DeviceName))
+                                {
+                                    if (deviceIds[s.DeviceName] == this.Settings.MonitorDeviceId)
+                                    {
+                                        screenToCapture = s;
+                                    }
+                                }
+                                else
+                                {
+                                    screenToCapture = s;
+                                }
                                 break;
                             }
                         }
+                    }
+
+                    if (screenToCapture == null && !string.IsNullOrEmpty(this.Settings.MonitorDeviceId) && deviceIds != null)
+                    {
+                        foreach (var s in Screen.AllScreens)
+                        {
+                            if (deviceIds.ContainsKey(s.DeviceName) && deviceIds[s.DeviceName] == this.Settings.MonitorDeviceId)
+                            {
+                                screenToCapture = s;
+                                this.Settings.MonitorDeviceName = s.DeviceName;      
+                                break;
+                            }
+                        }
+                    }
+                    
+
+                    if (screenToCapture == null && !string.IsNullOrEmpty(this.Settings.MonitorDeviceId))
+                    {
                     }
 
                     if (screenToCapture == null || screenToCapture.Bounds.Width <= 0 || screenToCapture.Bounds.Height <= 0)
@@ -132,6 +162,14 @@ namespace Recap
                             screenToCapture = Screen.AllScreens[0];
                         else
                             return ((byte[])null, previousHash, currentInterval);
+                    }
+
+                    if (screenToCapture != null && !string.IsNullOrEmpty(this.Settings.MonitorDeviceId))
+                    {
+                         if (deviceIds != null && deviceIds.ContainsKey(screenToCapture.DeviceName) && deviceIds[screenToCapture.DeviceName] == this.Settings.MonitorDeviceId)
+                         {
+                             this.Settings.MonitorDeviceName = screenToCapture.DeviceName;
+                         }
                     }
 
                     captureX = screenToCapture.Bounds.X;

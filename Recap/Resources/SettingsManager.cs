@@ -55,6 +55,7 @@ namespace Recap
                         settings.DisableVideoPreviews = Convert.ToBoolean(rk.GetValue("DisableVideoPreviews", settings.DisableVideoPreviews));
                         settings.MotionThreshold = Convert.ToInt32(rk.GetValue("MotionThreshold", settings.MotionThreshold));
                         settings.MonitorDeviceName = (rk.GetValue("MonitorDeviceName") as string);
+                        settings.MonitorDeviceId = (rk.GetValue("MonitorDeviceId") as string);
                         settings.ConverterLastPath = (rk.GetValue("ConverterLastPath") as string);
 
                         settings.SuppressExtensionWarning = Convert.ToBoolean(rk.GetValue("SuppressExtensionWarning", settings.SuppressExtensionWarning));
@@ -94,6 +95,7 @@ namespace Recap
                     rk.SetValue("DisableVideoPreviews", settings.DisableVideoPreviews, RegistryValueKind.DWord);
                     rk.SetValue("MotionThreshold", settings.MotionThreshold, RegistryValueKind.DWord);
                     rk.SetValue("MonitorDeviceName", settings.MonitorDeviceName ?? "", RegistryValueKind.String);
+                    rk.SetValue("MonitorDeviceId", settings.MonitorDeviceId ?? "", RegistryValueKind.String);
 
                     rk.SetValue("SuppressExtensionWarning", settings.SuppressExtensionWarning, RegistryValueKind.DWord);
                 }

@@ -110,5 +110,40 @@ namespace Recap
 
             return result;
         }
+
+        public static Dictionary<string, string> GetMonitorDeviceIds()
+        {
+            var result = new Dictionary<string, string>();
+            DISPLAY_DEVICE d = new DISPLAY_DEVICE();
+            d.cb = Marshal.SizeOf(d);
+
+            try
+            {
+                for (uint id = 0; EnumDisplayDevices(null, id, ref d, 0); id++)
+                {
+                    if ((d.StateFlags & 1) != 0)
+                    {
+                        string deviceName = d.DeviceName;
+                        string deviceID = "";
+
+                        DISPLAY_DEVICE dMonitor = new DISPLAY_DEVICE();
+                        dMonitor.cb = Marshal.SizeOf(dMonitor);
+                        if (EnumDisplayDevices(d.DeviceName, 0, ref dMonitor, 0))
+                        {
+                            deviceID = dMonitor.DeviceID;
+                        }
+
+                        if (!result.ContainsKey(deviceName))
+                        {
+                            result.Add(deviceName, deviceID);
+                        }
+                    }
+                    d.cb = Marshal.SizeOf(d);
+                }
+            }
+            catch { }
+
+            return result;
+        }
     }
 }

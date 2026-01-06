@@ -10,14 +10,17 @@ namespace Recap
     public class ChartsView : UserControl
     {
         public event Action<string> TimeRangeChanged;     
+        public event Action CustomRangeRequested;
         public event Action ResetExcludedRequested;
 
         private Chart _pieChart;
         private FlowLayoutPanel _panelControls;
-        private Button _btnDay, _btnWeek, _btnMonth, _btnAll, _btnReset;
+        private Button _btnDay, _btnWeek, _btnMonth, _btnRange, _btnAll, _btnReset;
         private Label _lblStatus;
+        private Label _lblTotalTime;
         
         private Dictionary<string, double> _currentData;
+        private Dictionary<string, string> _originalNamesMap;     
         private HashSet<string> _excludedApps = new HashSet<string>();
         private IconManager _iconManager;
 
@@ -56,8 +59,27 @@ namespace Recap
             _btnDay.Text = Localization.Get("chartDay");
             _btnWeek.Text = Localization.Get("chartWeek");
             _btnMonth.Text = Localization.Get("chartMonth");
+            _btnRange.Text = Localization.Get("selectRange");
             _btnAll.Text = Localization.Get("chartAll");
             _btnReset.Text = Localization.Get("chartReset");
+            
+            if (_currentData != null)
+            {
+                var filtered = _currentData.Where(kv => !_excludedApps.Contains(kv.Key)).ToList();
+                double total = filtered.Sum(kv => kv.Value);
+                TimeSpan totalTs = TimeSpan.FromSeconds(total);
+                int totalH = (int)totalTs.TotalHours;
+                int totalM = totalTs.Minutes;
+                if (_lblTotalTime != null)
+                {
+                    _lblTotalTime.Text = Localization.Format("totalTime", $"{totalH}:{totalM:D2}");
+                }
+            }
+            
+            if (_contextMenu != null && _contextMenu.Items.Count > 0)
+            {
+                _contextMenu.Items[0].Text = Localization.Get("excludeApp");
+            }
         }
 
         private void InitializeComponent()
@@ -75,6 +97,10 @@ namespace Recap
             _btnDay = CreateButton(Localization.Get("chartDay"), "Day");
             _btnWeek = CreateButton(Localization.Get("chartWeek"), "Week");
             _btnMonth = CreateButton(Localization.Get("chartMonth"), "Month");
+            
+            _btnRange = CreateButton(Localization.Get("selectRange"), "Range");
+            _btnRange.Click += (s, e) => CustomRangeRequested?.Invoke();
+
             _btnAll = CreateButton(Localization.Get("chartAll"), "All");
             
             _btnReset = new Button { Text = Localization.Get("chartReset"), AutoSize = true, BackColor = Color.LightCoral, FlatStyle = FlatStyle.Flat };
@@ -87,7 +113,7 @@ namespace Recap
 
             _lblStatus = new Label { AutoSize = true, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0, 8, 0, 0) };
 
-            _panelControls.Controls.AddRange(new Control[] { _btnDay, _btnWeek, _btnMonth, _btnAll, _btnReset, _lblStatus });
+            _panelControls.Controls.AddRange(new Control[] { _btnDay, _btnWeek, _btnMonth, _btnAll, _btnRange, _btnReset, _lblStatus });
 
             var splitContainer = new SplitContainer 
             { 
@@ -133,12 +159,33 @@ namespace Recap
             _legendList.MouseClick += OnLegendMouseClick;
 
             _contextMenu = new ContextMenuStrip();
-            var itemExclude = new ToolStripMenuItem("Исключить приложение");
+            var itemExclude = new ToolStripMenuItem(Localization.Get("excludeApp"));
             itemExclude.Click += OnExcludeAppClick;
             _contextMenu.Items.Add(itemExclude);
 
             splitContainer.Panel1.Controls.Add(_pieChart);
+
+            _lblTotalTime = new Label 
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Text = "",
+                Font = new Font(this.Font, FontStyle.Bold),
+                Padding = new Padding(0,0,0,5)
+            };
+            
             splitContainer.Panel2.Controls.Add(_legendList);
+            splitContainer.Panel2.Controls.Add(_lblTotalTime);           
+            splitContainer.Panel2.Controls.Clear();
+            splitContainer.Panel2.Controls.Add(_legendList);  
+            splitContainer.Panel2.Controls.Add(_lblTotalTime);            
+            splitContainer.Panel2.Controls.Clear();
+            splitContainer.Panel2.Controls.Add(_legendList);
+            splitContainer.Panel2.Controls.Add(_lblTotalTime);
+            _lblTotalTime.Dock = DockStyle.Top;
+            _legendList.Dock = DockStyle.Fill;
+            _lblTotalTime.BringToFront();      
+            _legendList.BringToFront();
             
             splitContainer.Panel2MinSize = 50;
             
@@ -176,9 +223,10 @@ namespace Recap
             else _lblStatus.Text = text;
         }
 
-        public void SetData(Dictionary<string, double> appDurations)
+        public void SetData(Dictionary<string, double> appDurations, Dictionary<string, string> originalNames = null)
         {
             _currentData = appDurations;
+            _originalNamesMap = originalNames;
             RebuildChart();
         }
 
@@ -198,6 +246,14 @@ namespace Recap
 
             var filtered = _currentData.Where(kv => !_excludedApps.Contains(kv.Key)).ToList();
             double total = filtered.Sum(kv => kv.Value);
+
+            TimeSpan totalTs = TimeSpan.FromSeconds(total);
+            int totalH = (int)totalTs.TotalHours;
+            int totalM = totalTs.Minutes;
+            if (_lblTotalTime != null)
+            {
+                _lblTotalTime.Text = Localization.Format("totalTime", $"{totalH}:{totalM:D2}");
+            }
 
             var sorted = filtered.OrderByDescending(kv => kv.Value).ToList();
 
@@ -230,14 +286,20 @@ namespace Recap
                 Color domColor = Color.Black;
                 if (_iconManager != null)
                 {
-                    var icon = _iconManager.GetIcon(appName);
+                    string iconKey = appName;
+                    if (_originalNamesMap != null && _originalNamesMap.ContainsKey(appName))
+                    {
+                        iconKey = _originalNamesMap[appName];
+                    }
+
+                    var icon = _iconManager.GetIcon(iconKey);
                     if (icon != null)
                     {
-                        if (!_legendIcons.Images.ContainsKey(appName))
+                        if (!_legendIcons.Images.ContainsKey(appName))        
                         {
                             _legendIcons.Images.Add(appName, icon);
                         }
-
+                        
                         using (var bmp = new Bitmap(icon))
                         {
                             domColor = bmp.GetDominantColor();
@@ -254,7 +316,15 @@ namespace Recap
 
                 point.Color = domColor;
 
-                var lvItem = new ListViewItem($"{appName} ({percentage:P1})");
+                string timeStr = Localization.Format("timeFormatShort", (int)t.TotalHours, t.Minutes);
+                
+                string displayName = appName;
+                if (displayName.Length > 20)
+                {
+                    displayName = displayName.Substring(0, 20) + "...";
+                }
+
+                var lvItem = new ListViewItem($"{displayName} - {timeStr} ({percentage:P1})");
                 lvItem.ImageKey = appName;
                 lvItem.ForeColor = domColor;
                 _legendList.Items.Add(lvItem);

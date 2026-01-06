@@ -105,7 +105,7 @@ namespace Recap
             _uiTimer.Tick += OnUiTimerTick;
             _uiTimer.Start();
 
-            _appFilterController = new AppFilterController(lstAppFilter, txtAppSearch, iconManager);
+            _appFilterController = new AppFilterController(lstAppFilter, txtAppSearch, iconManager, _ocrDb);
             lstAppFilter.ShowFrameCount = settings.ShowFrameCount;   
             _timelineController = new TimelineController(timeTrackBar, lblTime, lblInfo, chkAutoScroll, null, frameRepository, iconManager);
 
@@ -347,7 +347,7 @@ namespace Recap
                     }
                     else
                     {
-                        SwitchToImageMode(frame);
+                        SwitchtoImageMode(frame);
                     }
                 }
             }
@@ -396,7 +396,7 @@ namespace Recap
             _pendingVideoTimeMs = targetTimeMs;
         }
 
-        private void SwitchToImageMode(FrameIndex frame)
+        private void SwitchtoImageMode(FrameIndex frame)
         {
             if (!_mainPictureBox.Visible)
             {
@@ -678,36 +678,21 @@ namespace Recap
 
             List<MiniFrame> appFiltered;
 
-            if (string.IsNullOrEmpty(filter))
+             if (string.IsNullOrEmpty(filter))
             {
-                appFiltered = _allLoadedFrames;
+            appFiltered = _allLoadedFrames;
             }
-            else
-            {
-                string filterPipe = filter + "|";
-                string dbStyleKey = null;
-                string prefix = null;
-                bool isVideo = filter.Contains("|YouTube|");
-                bool isFolder = filter.EndsWith("|YouTube");
-
-                if (isVideo) dbStyleKey = filter.Replace("|YouTube|", "|");
-                if (isFolder) prefix = filter.Replace("|YouTube", "|youtube.com");
-
-                appFiltered = _allLoadedFrames.AsParallel().AsOrdered().Where(f => 
-                {
-                    string appName = "";
-                    if (_appMap.TryGetValue(f.AppId, out string name)) appName = name;
-                    
-                    if (appName == filter) return true;
-                    if (appName.StartsWith(filterPipe)) return true;
-
-                    if (isVideo && appName == dbStyleKey) return true;
-
-                    if (isFolder && appName.StartsWith(prefix)) return true;
-
-                    return false;
-                }).ToList();
-            }
+          else
+      {
+      appFiltered = new List<MiniFrame>();
+         foreach (var f in _allLoadedFrames)
+         {
+   if (MatchesAppFilter(f, filter))
+ {
+      appFiltered.Add(f);
+   }
+       }
+         }
 
             if (!string.IsNullOrEmpty(ocrText) && _ocrDb != null)
             {
@@ -807,14 +792,28 @@ namespace Recap
                 string dbStyleKey = filter.Replace("|YouTube|", "|");
                 if (appName == dbStyleKey) return true;
             }
-
             if (filter.EndsWith("|YouTube"))
             {
                 string prefix = filter.Replace("|YouTube", "|youtube.com");
                 if (appName.StartsWith(prefix)) return true;
+                string prefixWww = filter.Replace("|YouTube", "|www.youtube.com");
+                if (appName.StartsWith(prefixWww)) return true;
             }
 
-            return false;
+            string normalizedFilter = filter.Replace("|www.", "|");
+   string normalizedAppName = appName.Replace("|www.", "|");
+
+            if (normalizedAppName == normalizedFilter) return true;
+            if (normalizedAppName.StartsWith(normalizedFilter + "|")) return true;
+
+       if (normalizedFilter == filter)
+ {
+              string filterWithWww = filter.Contains("|") ? filter.Insert(filter.IndexOf('|') + 1, "www.") : filter;
+     if (appName == filterWithWww) return true;
+        if (appName.StartsWith(filterWithWww + "|")) return true;
+            }
+
+          return false;
         }
 
         private void OnAppFilterChanged(string newFilter)

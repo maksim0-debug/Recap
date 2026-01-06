@@ -63,17 +63,19 @@ namespace Recap
             cmbMonitor = new ComboBox { Location = new Point(controlX, topMargin), Size = new Size(controlWidth, 21), DropDownStyle = ComboBoxStyle.DropDownList };
             
             var friendlyNames = DisplayHelper.GetMonitorFriendlyNames();
+            var deviceIds = DisplayHelper.GetMonitorDeviceIds();
 
             foreach (var screen in Screen.AllScreens)
             {
                 string cleanName = screen.DeviceName.Replace(@"\\.\", "");
                 string friendlyName = friendlyNames.ContainsKey(screen.DeviceName) ? friendlyNames[screen.DeviceName] : cleanName;
+                string deviceId = deviceIds.ContainsKey(screen.DeviceName) ? deviceIds[screen.DeviceName] : "";
                 
                 string label = $"{friendlyName} ({screen.Bounds.Width}x{screen.Bounds.Height})";
                 if (screen.Primary) label += " [Primary]";
-                cmbMonitor.Items.Add(new ScreenItem { DeviceName = screen.DeviceName, DisplayName = label });
+                cmbMonitor.Items.Add(new ScreenItem { DeviceName = screen.DeviceName, DeviceId = deviceId, DisplayName = label });
             }
-            cmbMonitor.Items.Add(new ScreenItem { DeviceName = "AllScreens", DisplayName = Localization.Get("monitorAll") });
+            cmbMonitor.Items.Add(new ScreenItem { DeviceName = "AllScreens", DeviceId = "AllScreens", DisplayName = Localization.Get("monitorAll") });
             topMargin += rowHeight;
 
             lblQuality = new Label { Location = new Point(labelX, topMargin + 3), AutoSize = true };
@@ -162,11 +164,30 @@ namespace Recap
             else cmbLanguage.SelectedIndex = 0;
 
             cmbMonitor.SelectedIndex = 0;
-            if (!string.IsNullOrEmpty(UpdatedSettings.MonitorDeviceName))
+            bool found = false;
+
+            // Try to find by ID first (more reliable)
+            if (!string.IsNullOrEmpty(UpdatedSettings.MonitorDeviceId))
             {
                 for (int i = 0; i < cmbMonitor.Items.Count; i++)
                 {
-                    if (((ScreenItem)cmbMonitor.Items[i]).DeviceName == UpdatedSettings.MonitorDeviceName)
+                    var item = (ScreenItem)cmbMonitor.Items[i];
+                    if (item.DeviceId == UpdatedSettings.MonitorDeviceId)
+                    {
+                        cmbMonitor.SelectedIndex = i;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            // Fallback to Name if ID not found or not set
+            if (!found && !string.IsNullOrEmpty(UpdatedSettings.MonitorDeviceName))
+            {
+                for (int i = 0; i < cmbMonitor.Items.Count; i++)
+                {
+                    var item = (ScreenItem)cmbMonitor.Items[i];
+                    if (item.DeviceName == UpdatedSettings.MonitorDeviceName)
                     {
                         cmbMonitor.SelectedIndex = i;
                         break;
@@ -290,6 +311,7 @@ namespace Recap
             if (cmbMonitor.SelectedItem is ScreenItem selectedScreen)
             {
                 UpdatedSettings.MonitorDeviceName = selectedScreen.DeviceName;
+                UpdatedSettings.MonitorDeviceId = selectedScreen.DeviceId;
             }
 
             UpdatedSettings.JpegQuality = GetQualityValueFromIndex(cmbQuality.SelectedIndex);
@@ -323,6 +345,7 @@ namespace Recap
         private class ScreenItem
         {
             public string DeviceName { get; set; }
+            public string DeviceId { get; set; }
             public string DisplayName { get; set; }
             public override string ToString() => DisplayName;
         }

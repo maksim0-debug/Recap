@@ -17,9 +17,13 @@ namespace Recap
         private readonly Button _btnNextMonth;
         private readonly Button _btnRefresh;    
         private readonly Label _lblMonth;
+        private readonly Label _lblTotal;
         private FrameRepository _frameRepository;
+        private readonly OcrDatabase _ocrDb;
+        private Dictionary<string, string> _aliases = new Dictionary<string, string>();
 
         private DateTime _displayMonth;
+        private double _lastTotalSeconds = 0;
         private AppSettings _settings;
 
         public StatisticsViewController(
@@ -29,9 +33,11 @@ namespace Recap
             Button btnNextMonth, 
             Button btnRefresh,   
             Label lblMonth, 
+            Label lblTotal,
             FrameRepository frameRepository, 
             AppSettings settings,
-            IconManager iconManager)
+            IconManager iconManager,
+            OcrDatabase ocrDb)
         {
             _activityHeatmap = activityHeatmap;
             _chartsView = chartsView;
@@ -39,8 +45,12 @@ namespace Recap
             _btnNextMonth = btnNextMonth;
             _btnRefresh = btnRefresh;
             _lblMonth = lblMonth;
+            _lblTotal = lblTotal;
             _frameRepository = frameRepository;
             _settings = settings;
+            _ocrDb = ocrDb;
+
+            RefreshAliases();
 
             _chartsView.SetIconManager(iconManager);
             _chartsView.TimeRangeChanged += OnChartTimeRangeChanged;
@@ -51,6 +61,14 @@ namespace Recap
             _btnNextMonth.Click += OnNextMonthClick;
             if (_btnRefresh != null) _btnRefresh.Click += OnRefreshClick;    
             _activityHeatmap.DayClicked += OnHeatmapDayClicked;
+        }
+
+        public void RefreshAliases()
+        {
+            if (_ocrDb != null)
+            {
+                _aliases = _ocrDb.LoadAppAliases();
+            }
         }
 
         private async void OnRefreshClick(object sender, EventArgs e)
@@ -74,11 +92,27 @@ namespace Recap
 
         private async void OnChartTimeRangeChanged(string range)
         {
-            _chartsView.SetStatus(Localization.Get("loadingData"));
-            
             DateTime start = DateTime.MinValue;
             DateTime end = DateTime.MaxValue;
 
+            if (range == "Range")
+            {
+                using (var form = new RangePickerForm())
+                {
+                    if (form.ShowDialog() == DialogResult.OK)
+                    {
+                        start = form.StartDate;
+                        end = form.EndDate;
+                    }
+                    else
+                    {
+                        return;
+                    }
+                }
+            }
+
+            _chartsView.SetStatus(Localization.Get("loadingData"));
+            
             if (range == "Day")
             {
                 start = DateTime.Today;
@@ -91,8 +125,8 @@ namespace Recap
             }
             else if (range == "Month")
             {
-                start = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-                end = start.AddMonths(1).AddTicks(-1);
+                start = DateTime.Today.AddDays(-29);
+                end = DateTime.Today.AddDays(1).AddTicks(-1);
             }
             else if (range == "All")
             {
@@ -126,7 +160,20 @@ namespace Recap
                 }
             });
 
-            _chartsView.SetData(stats);
+            Dictionary<string, string> aliasMap = null;
+            if (_aliases != null && _aliases.Count > 0)
+            {
+                aliasMap = new Dictionary<string, string>();
+                foreach (var kvp in _aliases)
+                {
+                    if (!aliasMap.ContainsKey(kvp.Value))
+                    {
+                        aliasMap[kvp.Value] = kvp.Key;
+                    }
+                }
+            }
+
+            _chartsView.SetData(stats, aliasMap);
             _chartsView.SetStatus("");
         }
 
@@ -144,7 +191,9 @@ namespace Recap
                 string app = "";
                 if (appMap.TryGetValue(f.AppId, out string name)) app = name;
                 
-                if (app.Contains("|")) app = app.Split('|')[0];    
+                if (app.Contains("|")) app = app.Split('|')[0]; 
+                
+                if (_aliases != null && _aliases.ContainsKey(app)) app = _aliases[app];   
 
                 if (!result.ContainsKey(app)) result[app] = 0;
                 result[app] += (durationMs / 1000.0);
@@ -210,6 +259,15 @@ namespace Recap
 
             var data = await Task.Run(() => _frameRepository.GetActivityDurations(startDate, endDate));
 
+            double totalSeconds = 0;
+            foreach (var kv in data)
+            {
+                totalSeconds += kv.Value.TotalSeconds;
+            }
+            _lastTotalSeconds = totalSeconds;
+            int totalHours = (int)(totalSeconds / 3600);
+            _lblTotal.Text = Localization.Format("totalMonthActivity", totalHours);
+
             _activityHeatmap.BaseColor = System.Drawing.Color.FromArgb(16, 124, 16);  
             _activityHeatmap.ForeColor = System.Drawing.Color.Black;
             _activityHeatmap.BackColor = System.Drawing.Color.FromArgb(243, 243, 243);
@@ -224,6 +282,9 @@ namespace Recap
         {
             var culture = new CultureInfo(_settings.Language);
             _lblMonth.Text = _displayMonth.ToString("MMMM yyyy", culture);
+            
+            int totalHours = (int)(_lastTotalSeconds / 3600);
+            if (_lblTotal != null) _lblTotal.Text = Localization.Format("totalMonthActivity", totalHours);
         }
 
         public void Dispose()

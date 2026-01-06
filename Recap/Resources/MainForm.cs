@@ -59,6 +59,8 @@ namespace Recap
         private DateTimePicker dtpHourlyStart;
         private DateTimePicker dtpHourlyEnd;
         private Label lblHourlyCustom;
+        private Label lblHeatmapTotal;
+        private Label lblHourlyTotal;
         private HourlyStatisticsController _hourlyStatisticsController;
 
         private bool _suppressDateEvent = false;
@@ -151,11 +153,11 @@ namespace Recap
             }
 
             _statisticsViewController = new StatisticsViewController(
-                activityHeatmap, chartsView, btnPrevMonth, btnNextMonth, btnRefresh, lblMonth, _frameRepository, _currentSettings, _iconManager);
+                activityHeatmap, chartsView, btnPrevMonth, btnNextMonth, btnRefresh, lblMonth, lblHeatmapTotal, _frameRepository, _currentSettings, _iconManager, _ocrDb);
             _statisticsViewController.DaySelected += OnStatisticsDaySelected;
 
             _hourlyStatisticsController = new HourlyStatisticsController(
-                hourlyActivityHeatmap, _frameRepository, cmbHourlyPeriod, dtpHourlyStart, dtpHourlyEnd, lblHourlyCustom);
+                hourlyActivityHeatmap, _frameRepository, cmbHourlyPeriod, dtpHourlyStart, dtpHourlyEnd, lblHourlyCustom, lblHourlyTotal);
         }
 
         private void OnDayChanged()
@@ -321,10 +323,11 @@ namespace Recap
             btnNextMonth = new Button { Location = new Point(328, 8), Size = new Size(100, 28), Text = ">" };
 
             var btnRefresh = new Button { Location = new Point(440, 8), Size = new Size(100, 28), Text = "Refresh" };
+            lblHeatmapTotal = new Label { Location = new Point(550, 14), AutoSize = true, Text = "", Font = new Font(this.Font, FontStyle.Bold) };
 
             activityHeatmap = new ActivityHeatmap { Location = new Point(12, 40), Size = new Size(tabPageHeatmap.ClientSize.Width - 24, tabPageHeatmap.ClientSize.Height - 52), Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right };
 
-            tabPageHeatmap.Controls.AddRange(new Control[] { btnPrevMonth, lblMonth, btnNextMonth, btnRefresh, activityHeatmap });
+            tabPageHeatmap.Controls.AddRange(new Control[] { btnPrevMonth, lblMonth, btnNextMonth, btnRefresh, lblHeatmapTotal, activityHeatmap });
 
             chartsView = new ChartsView();
             tabPageCharts.Controls.Add(chartsView);
@@ -335,6 +338,7 @@ namespace Recap
             lblHourlyCustom = new Label { Location = new Point(170, 15), AutoSize = true, Text = "Период:", Visible = false };
             dtpHourlyStart = new DateTimePicker { Location = new Point(230, 12), Width = 100, Format = DateTimePickerFormat.Short, Visible = false };
             dtpHourlyEnd = new DateTimePicker { Location = new Point(340, 12), Width = 100, Format = DateTimePickerFormat.Short, Visible = false };
+            lblHourlyTotal = new Label { Location = new Point(460, 15), AutoSize = true, Text = "", Font = new Font(this.Font, FontStyle.Bold) };
 
             hourlyActivityHeatmap = new HourlyActivityHeatmap
             {
@@ -346,7 +350,7 @@ namespace Recap
                 BaseColor = Color.FromArgb(16, 124, 16)
             };
 
-            tabPageHourly.Controls.AddRange(new Control[] { cmbHourlyPeriod, lblHourlyCustom, dtpHourlyStart, dtpHourlyEnd, hourlyActivityHeatmap });
+            tabPageHourly.Controls.AddRange(new Control[] { cmbHourlyPeriod, lblHourlyCustom, dtpHourlyStart, dtpHourlyEnd, lblHourlyTotal, hourlyActivityHeatmap });
 
             statsTabControl.TabPages.Add(tabPageHeatmap);
             statsTabControl.TabPages.Add(tabPageCharts);
@@ -476,7 +480,11 @@ namespace Recap
 
         private async void MainTabControl_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (mainTabControl.SelectedIndex == 1) await _statisticsViewController.ActivateAsync();
+            if (mainTabControl.SelectedIndex == 1) 
+            {
+                _statisticsViewController.RefreshAliases();
+                await _statisticsViewController.ActivateAsync();
+            }
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)

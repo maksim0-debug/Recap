@@ -31,6 +31,9 @@ namespace Recap
         private readonly DarkListBox _lstAppFilter;
         private readonly TextBox _txtAppSearch;
         private readonly IconManager _iconManager;
+        private readonly OcrDatabase _db;
+        private Dictionary<string, string> _aliases;
+        private ContextMenuStrip _ctxMenuApps;
 
         private List<MiniFrame> _currentFrames = new List<MiniFrame>();
         private Dictionary<int, string> _appMap = new Dictionary<int, string>();
@@ -62,16 +65,21 @@ namespace Recap
         private int _cachedGlobalFrameCount = 0;
         private Dictionary<string, ParsedAppInfo> _parsedAppInfoCache = new Dictionary<string, ParsedAppInfo>();
 
-        public AppFilterController(DarkListBox lstAppFilter, TextBox txtAppSearch, IconManager iconManager)
+        public AppFilterController(DarkListBox lstAppFilter, TextBox txtAppSearch, IconManager iconManager, OcrDatabase db)
         {
             _lstAppFilter = lstAppFilter;
             _txtAppSearch = txtAppSearch;
             _iconManager = iconManager;
+            _db = db;
+            _aliases = _db.LoadAppAliases();
+
+            InitializeContextMenu();
 
             _lstAppFilter.IconManager = _iconManager;
             _iconManager.IconLoaded += OnIconLoaded;
 
             _lstAppFilter.MouseClick += LstAppFilter_MouseClick;
+            _lstAppFilter.MouseDown += LstAppFilter_MouseDown;
             _lstAppFilter.MouseDoubleClick += LstAppFilter_MouseDoubleClick;
             _lstAppFilter.SelectedIndexChanged += LstAppFilter_SelectedIndexChanged;
             _txtAppSearch.TextChanged += TxtAppSearch_TextChanged;
@@ -478,16 +486,28 @@ namespace Recap
                 var appNode = appKvp.Value;
                 bool hasChildren = appNode.Children.Count > 0;
 
-                bool appMatches = exeName.ToLower().Contains(searchText);
-                bool anyChildMatches = appNode.Children.Any(c =>
-                    c.Key.ToLower().Contains(searchText) ||
-                    c.Value.Children.Any(gc => gc.Key.ToLower().Contains(searchText)));
+                string displayName = exeName == "Legacy" ? Localization.Get("legacyApp") : exeName;
+                if (_aliases != null && _aliases.ContainsKey(exeName)) displayName = _aliases[exeName];
+
+                bool appMatches = displayName.ToLower().Contains(searchText); 
+                bool anyChildMatches = appNode.Children.Any(c => {
+                    string fullGroupKey = $"{exeName}|{c.Key}";
+                    string grpDisp = c.Key;
+                    if (_aliases != null && _aliases.ContainsKey(fullGroupKey)) grpDisp = _aliases[fullGroupKey];
+                    if (grpDisp.ToLower().Contains(searchText)) return true;
+
+                    return c.Value.Children.Any(gc => {
+                         string fullDetailKey = $"{fullGroupKey}|{gc.Key}";
+                         string detDisp = gc.Key;
+                         if (_aliases != null && _aliases.ContainsKey(fullDetailKey)) detDisp = _aliases[fullDetailKey];
+                         return detDisp.ToLower().Contains(searchText);
+                    });
+                });
 
                 if (isSearch && !appMatches && !anyChildMatches) continue;
                 if (isSearch && anyChildMatches) _expandedApps.Add(exeName);
 
                 bool isAppExpanded = _expandedApps.Contains(exeName) || isSearch;
-                string displayName = exeName == "Legacy" ? Localization.Get("legacyApp") : exeName;
 
                 _viewItems.Add(new FilterItem
                 {
@@ -514,8 +534,17 @@ namespace Recap
                         bool hasGrandChildren = groupNode.Children.Count > 0;
                         string fullGroupKey = $"{exeName}|{groupName}";
 
-                        bool groupMatches = groupName.ToLower().Contains(searchText);
-                        bool anyGrandChildMatches = groupNode.Children.Keys.Any(k => k.ToLower().Contains(searchText));
+                        string groupDisplayName = groupName;
+                        if (_aliases != null && _aliases.ContainsKey(fullGroupKey)) groupDisplayName = _aliases[fullGroupKey];
+
+                        bool groupMatches = groupDisplayName.ToLower().Contains(searchText);
+                        bool anyGrandChildMatches = groupNode.Children.Any(k => {
+                            string fullDetailKey = $"{fullGroupKey}|{k.Key}";
+                            string detailName = k.Key;
+                            string detDisp = detailName;
+                            if (_aliases != null && _aliases.ContainsKey(fullDetailKey)) detDisp = _aliases[fullDetailKey];
+                            return detDisp.ToLower().Contains(searchText);
+                        });
 
                         if (isSearch && !appMatches && !groupMatches && !anyGrandChildMatches) continue;
                         if (isSearch && anyGrandChildMatches) _expandedGroups.Add(fullGroupKey);
@@ -525,7 +554,7 @@ namespace Recap
                         _viewItems.Add(new FilterItem
                         {
                             RawName = fullGroupKey,
-                            DisplayName = groupName,
+                            DisplayName = groupDisplayName,
                             DurationMs = groupNode.TotalMs,
                             FrameCount = groupNode.FrameCount,
                             Level = 1,
@@ -543,14 +572,17 @@ namespace Recap
                             foreach (var detailKvp in sortedDetails)
                             {
                                 string detailName = detailKvp.Key;
-                                if (isSearch && !detailName.ToLower().Contains(searchText) && !groupMatches && !appMatches) continue;
-
                                 string fullDetailKey = $"{exeName}|{groupName}|{detailName}";
+                                
+                                string detailDisplayName = detailName;
+                                if (_aliases != null && _aliases.ContainsKey(fullDetailKey)) detailDisplayName = _aliases[fullDetailKey];
+
+                                if (isSearch && !detailDisplayName.ToLower().Contains(searchText) && !groupMatches && !appMatches) continue;
 
                                 _viewItems.Add(new FilterItem
                                 {
                                     RawName = fullDetailKey,
-                                    DisplayName = detailName,
+                                    DisplayName = detailDisplayName,
                                     DurationMs = detailKvp.Value.TotalMs,
                                     FrameCount = detailKvp.Value.FrameCount,
                                     Level = 2,
@@ -680,6 +712,89 @@ namespace Recap
                     _lstAppFilter.BeginInvoke(new Action(() => _lstAppFilter.Invalidate()));
                 else
                     _lstAppFilter.Invalidate();
+            }
+        }
+
+        private void InitializeContextMenu()
+        {
+            _ctxMenuApps = new ContextMenuStrip();
+            var renameItem = new ToolStripMenuItem(Localization.Get("rename"));
+            renameItem.Click += RenameMenuItem_Click;
+            _ctxMenuApps.Items.Add(renameItem);
+
+            var resetItem = new ToolStripMenuItem(Localization.Get("resetName"));
+            resetItem.Click += ResetNameMenuItem_Click;
+            _ctxMenuApps.Items.Add(resetItem);
+        }
+
+        private void LstAppFilter_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Right)
+            {
+                int index = _lstAppFilter.IndexFromPoint(e.Location);
+                if (index >= 0 && index < _viewItems.Count)
+                {
+                    _lstAppFilter.SelectedIndex = index;
+                    var item = _viewItems[index];
+
+                    if (item.Level >= 0 && item.RawName != Localization.Get("allApps"))
+                    {
+                        _ctxMenuApps.Show(_lstAppFilter, e.Location);
+                    }
+                }
+            }
+        }
+
+        private void RenameMenuItem_Click(object sender, EventArgs e)
+        {
+            if (_lstAppFilter.SelectedIndex < 0) return;
+            var item = _viewItems[_lstAppFilter.SelectedIndex];
+
+            using (var form = new RenameForm(item.DisplayName))
+            {
+                while (form.ShowDialog() == DialogResult.OK)
+                {
+                    string newName = form.NewName.Trim();
+                    if (string.IsNullOrEmpty(newName)) break;
+
+                    if (_aliases == null) _aliases = new Dictionary<string, string>();
+
+                    bool isDuplicate = _aliases.Values.Any(v => v.Equals(newName, StringComparison.OrdinalIgnoreCase) && 
+                                                                _aliases.FirstOrDefault(x => x.Value == v).Key != item.RawName);
+
+                    if (isDuplicate)
+                    {
+                        int attempt = 2;
+                        string candidate = newName + attempt;
+                        while (_aliases.Values.Any(v => v.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            attempt++;
+                            candidate = newName + attempt;
+                        }
+
+                        MessageBox.Show($"{Localization.Get("aliasDuplicateWarning")} {candidate}", Localization.Get("windowTitle"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        form.SetAlias(candidate);
+                        continue;
+                    }
+
+                    _aliases[item.RawName] = newName;
+                    _db.SetAppAlias(item.RawName, newName);
+                    RefreshAppFilterList();
+                    break;
+                }
+            }
+        }
+
+        private void ResetNameMenuItem_Click(object sender, EventArgs e)
+        {
+            if (_lstAppFilter.SelectedIndex < 0) return;
+            var item = _viewItems[_lstAppFilter.SelectedIndex];
+
+            if (_aliases != null && _aliases.ContainsKey(item.RawName))
+            {
+                _aliases.Remove(item.RawName);
+                _db.RemoveAppAlias(item.RawName);
+                RefreshAppFilterList();
             }
         }
 

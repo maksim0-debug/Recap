@@ -294,6 +294,12 @@ namespace Recap
                         Description TEXT
                     );
                     CREATE INDEX IF NOT EXISTS idx_notes_timestamp ON Notes(Timestamp);
+
+                    -- AppAliases table
+                    CREATE TABLE IF NOT EXISTS AppAliases (
+                        RawName TEXT PRIMARY KEY,
+                        Alias TEXT NOT NULL
+                    );
                 ";
                 using (var command = new SqliteCommand(sql, connection))
                 {
@@ -1649,6 +1655,50 @@ namespace Recap
                     cmd.Parameters.AddWithValue("@ts", timestamp);
                     cmd.ExecuteNonQuery();
                 }
+            });
+        }
+
+        public void SetAppAlias(string rawName, string alias)
+        {
+            ExecuteWithRetry(connection =>
+            {
+                using (var cmd = new SqliteCommand("INSERT OR REPLACE INTO AppAliases (RawName, Alias) VALUES (@raw, @alias)", connection))
+                {
+                    cmd.Parameters.AddWithValue("@raw", rawName);
+                    cmd.Parameters.AddWithValue("@alias", alias);
+                    cmd.ExecuteNonQuery();
+                }
+            });
+        }
+
+        public void RemoveAppAlias(string rawName)
+        {
+            ExecuteWithRetry(connection =>
+            {
+                using (var cmd = new SqliteCommand("DELETE FROM AppAliases WHERE RawName = @raw", connection))
+                {
+                    cmd.Parameters.AddWithValue("@raw", rawName);
+                    cmd.ExecuteNonQuery();
+                }
+            });
+        }
+
+        public Dictionary<string, string> LoadAppAliases()
+        {
+            return ExecuteScalarWithRetry(connection =>
+            {
+                var dict = new Dictionary<string, string>();
+                using (var cmd = new SqliteCommand("SELECT RawName, Alias FROM AppAliases", connection))
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        string r = reader.GetString(0);
+                        string a = reader.GetString(1);
+                        if (!dict.ContainsKey(r)) dict[r] = a;
+                    }
+                }
+                return dict;
             });
         }
 

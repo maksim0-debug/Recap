@@ -22,6 +22,8 @@
 
         public string MonitorDeviceName { get; set; }
 
+        public string MonitorDeviceId { get; set; }
+
         public int MotionThreshold { get; set; }
 
         public string ConverterLastPath { get; set; }

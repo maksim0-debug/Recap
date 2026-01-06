@@ -84,6 +84,12 @@ namespace Recap
                     { "chartAll", "All Time" },
                     { "chartReset", "Reset Filter" },
                     { "loadingData", "Loading data..." },
+                    { "totalMonthActivity", "Total activity for the month: {0} hours" },
+                    { "totalTime", "Total time: {0}" },
+                    { "rangePickerTitle", "Select Range" },
+                    { "rangePickerStart", "Start Date:" },
+                    { "rangePickerEnd", "End Date:" },
+                    { "excludeApp", "Exclude application" },
                     { "activityTooltip", "{0}:00 - {1}:00\nActivity: {2}h {3}m" },
                     { "activity", "Activity" },
                     { "timeFormatFull", "{0}h {1}m {2}s" },
@@ -129,7 +135,11 @@ namespace Recap
                     { "helpDeleteNote", "Delete note (on note item)" },
                     { "or", "or" },
                     { "mouseWheel", "Mouse Wheel" },
-                    { "rightClick", "Right Click" }
+                    { "rightClick", "Right Click" },
+                    { "rename", "Rename" },
+                    { "resetName", "Reset Name" },
+                    { "enterNewName", "Enter new name:" },
+                    { "aliasDuplicateWarning", "Name already exists. Suggested:" }
                 }
             },
             {
@@ -202,11 +212,17 @@ namespace Recap
                     { "charts", "Диаграммы" },
                     { "heatmap", "Тепловая карта" },
                     { "chartDay", "День" },
+                    { "totalMonthActivity", "Общее время активности за месяц - {0} часов" },
+                    { "totalTime", "Всего времени {0}" },
+                    { "rangePickerTitle", "Выбрать период" },
+                    { "rangePickerStart", "Начало:" },
+                    { "rangePickerEnd", "Конец:" },
                     { "chartWeek", "Неделя (7 дней)" },
                     { "chartMonth", "Месяц" },
                     { "chartAll", "Все время" },
                     { "chartReset", "Сброс фильтра" },
                     { "loadingData", "Загрузка данных..." },
+                    { "excludeApp", "Исключить приложение" },
                     { "activityTooltip", "{0}:00 - {1}:00\nАктивность: {2}ч {3}м" },
                     { "activity", "Активность" },
                     { "timeFormatFull", "{0}ч {1}м {2}с" },
@@ -252,7 +268,11 @@ namespace Recap
                     { "helpDeleteNote", "Удалить заметку (на элементе)" },
                     { "or", "или" },
                     { "mouseWheel", "Колесико мыши" },
-                    { "rightClick", "ПКМ" }
+                    { "rightClick", "ПКМ" },
+                    { "rename", "Переименовать" },
+                    { "resetName", "Сбросить название" },
+                    { "enterNewName", "Введите новое название:" },
+                    { "aliasDuplicateWarning", "Имя уже существует. Предлагается:" }
                 }
             },
             {
@@ -325,11 +345,17 @@ namespace Recap
                     { "charts", "Діаграми" },
                     { "heatmap", "Теплова карта" },
                     { "chartDay", "День" },
+                    { "totalMonthActivity", "Загальний час активності за місяць - {0} годин" },
+                    { "totalTime", "Всього часу {0}" },
+                    { "rangePickerTitle", "Вибрати період" },
+                    { "rangePickerStart", "Початок:" },
+                    { "rangePickerEnd", "Кінець:" },
                     { "chartWeek", "Тиждень (7 днів)" },
                     { "chartMonth", "Місяць" },
                     { "chartAll", "Весь час" },
                     { "chartReset", "Скинути фільтр" },
                     { "loadingData", "Завантаження даних..." },
+                    { "excludeApp", "Виключити застосунок" },
                     { "activityTooltip", "{0}:00 - {1}:00\nАктивність: {2}год {3}хв" },
                     { "activity", "Активність" },
                     { "timeFormatFull", "{0}г {1}х {2}с" },
@@ -375,7 +401,11 @@ namespace Recap
                     { "helpDeleteNote", "Видалити нотатку (на елементі)" },
                     { "or", "або" },
                     { "mouseWheel", "Коліщатко миші" },
-                    { "rightClick", "ПКМ" }
+                    { "rightClick", "ПКМ" },
+                    { "rename", "Перейменувати" },
+                    { "resetName", "Скинути назву" },
+                    { "enterNewName", "Введіть нову назву:" },
+                    { "aliasDuplicateWarning", "Назва вже існує. Пропонується:" }
                 }
             }
         };

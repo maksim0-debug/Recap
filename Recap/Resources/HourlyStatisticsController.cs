@@ -13,6 +13,7 @@ namespace Recap
         private readonly DateTimePicker _startDatePicker;
         private readonly DateTimePicker _endDatePicker;
         private readonly Label _customRangeLabel;
+        private readonly Label _totalLabel;
 
         public HourlyStatisticsController(
             HourlyActivityHeatmap heatmap,
@@ -20,7 +21,8 @@ namespace Recap
             ComboBox periodSelector,
             DateTimePicker startDatePicker,
             DateTimePicker endDatePicker,
-            Label customRangeLabel)
+            Label customRangeLabel,
+            Label totalLabel)
         {
             _heatmap = heatmap;
             _repository = repository;
@@ -28,6 +30,7 @@ namespace Recap
             _startDatePicker = startDatePicker;
             _endDatePicker = endDatePicker;
             _customRangeLabel = customRangeLabel;
+            _totalLabel = totalLabel;
 
             _periodSelector.SelectedIndexChanged += OnPeriodChanged;
             _startDatePicker.ValueChanged += OnDateChanged;
@@ -110,6 +113,19 @@ namespace Recap
             }
 
             var data = await Task.Run(() => _repository.GetHourlyActivity(start, end));
+
+            TimeSpan totalSpan = TimeSpan.Zero;
+            foreach(var kv in data)
+            {
+                totalSpan += kv.Value;
+            }
+            if (_totalLabel != null) 
+            {
+                int totalHours = (int)totalSpan.TotalHours;
+                int minutes = totalSpan.Minutes;
+                string timeStr = $"{totalHours}:{minutes:D2}";
+                _totalLabel.Text = Localization.Format("totalTime", timeStr);
+            }
             
             _heatmap.SetData(data);
         }
