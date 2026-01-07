@@ -9,6 +9,12 @@ namespace Recap
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
+        public static IntPtr GetActiveWindowHandle()
+        {
+            return GetForegroundWindow();
+        }
+
+
         [DllImport("user32.dll", SetLastError = true)]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
@@ -20,9 +26,13 @@ namespace Recap
 
         public static string GetActiveWindowProcessName()
         {
+            return GetProcessNameFromHwnd(GetForegroundWindow());
+        }
+
+        public static string GetProcessNameFromHwnd(IntPtr hwnd)
+        {
             try
             {
-                IntPtr hwnd = GetForegroundWindow();
                 if (hwnd == IntPtr.Zero) return "Unknown.exe";
 
                 GetWindowThreadProcessId(hwnd, out uint pid);
@@ -37,9 +47,13 @@ namespace Recap
 
         public static string GetActiveWindowTitle()
         {
+            return GetWindowTitleFromHwnd(GetForegroundWindow());
+        }
+
+        public static string GetWindowTitleFromHwnd(IntPtr hwnd)
+        {
             try
             {
-                IntPtr hwnd = GetForegroundWindow();
                 if (hwnd == IntPtr.Zero) return "";
 
                 int length = GetWindowTextLength(hwnd);

@@ -209,7 +209,7 @@ namespace Recap
                         {
                             int w = 32;
                             int h = 24;
-                            using (var resized = ResizeImage(original, w, h))
+                            using (var resized = ResizeHighQuality(original, w, h))
                             {
                                 resized.Save(thumbPath, System.Drawing.Imaging.ImageFormat.Jpeg);
                                 loadedImage = new Bitmap(resized);
@@ -273,15 +273,31 @@ namespace Recap
                     string exePath = FindExePath(exeName);
                     if (!string.IsNullOrEmpty(exePath))
                     {
-                        Icon extractedIcon = Icon.ExtractAssociatedIcon(exePath);
-                        if (extractedIcon != null)
+                        using (var jumbo = IconExtractor.GetWin32JumboIcon(exePath))
                         {
-                            using (var iconBmp = extractedIcon.ToBitmap())
+                            if (jumbo != null)
                             {
-                                iconBmp.Save(iconPath, System.Drawing.Imaging.ImageFormat.Png);
+                                using (var trimmed = TrimTransparent(jumbo))
+                                using (var resized = ResizeHighQuality(trimmed, 16, 16))
+                                {
+                                    resized.Save(iconPath, System.Drawing.Imaging.ImageFormat.Png);
+                                    loadedIcon = new Bitmap(resized);
+                                }
                             }
-                            loadedIcon = new Bitmap(iconPath);
-                            extractedIcon.Dispose();
+                            else
+                            {
+                                Icon extractedIcon = Icon.ExtractAssociatedIcon(exePath);
+                                if (extractedIcon != null)
+                                {
+                                    using (var iconBmp = extractedIcon.ToBitmap())
+                                    using (var resized = ResizeHighQuality(iconBmp, 16, 16))
+                                    {
+                                        resized.Save(iconPath, System.Drawing.Imaging.ImageFormat.Png);
+                                        loadedIcon = new Bitmap(resized);
+                                    }
+                                    extractedIcon.Dispose();
+                                }
+                            }
                         }
                     }
                 }
@@ -289,6 +305,54 @@ namespace Recap
             catch { }
 
             FinishLoading(cacheKey, loadedIcon, originalName);
+        }
+
+        public void TryFetchIconFromHwnd(IntPtr hWnd, string rawAppName)
+        {
+            if (hWnd == IntPtr.Zero || string.IsNullOrEmpty(rawAppName)) return;
+
+            var parts = rawAppName.Split('|');
+            string exeName = parts[0];
+            string cacheKey = "exe_" + MakeSafeFilename(exeName).ToLower();
+
+            lock (_lock)
+            {
+                if (_memoryCache.ContainsKey(cacheKey)) return;   
+            }
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    using (Bitmap jumbo = IconExtractor.GetJumboIconFromHwnd(hWnd))
+                    {
+                        if (jumbo != null)
+                        {
+                            using (var trimmed = TrimTransparent(jumbo))
+                            using (var resized = ResizeHighQuality(trimmed, 16, 16))
+                            {
+                                string iconPath = Path.Combine(_iconCachePath, cacheKey + ".png");
+                                resized.Save(iconPath, System.Drawing.Imaging.ImageFormat.Png);
+
+                                Image finalIcon = new Bitmap(resized);
+                                
+                                lock (_lock)
+                                {
+                                    _memoryCache[cacheKey] = finalIcon;
+                                }
+                                IconLoaded?.Invoke(rawAppName);
+                            }
+                        }
+                        else
+                        {
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    DebugLogger.LogError("TryFetchIconFromHwnd", ex);
+                }
+            });
         }
 
         private void FinishLoading(string cacheKey, Image icon, string originalName)
@@ -330,25 +394,111 @@ namespace Recap
             return text;
         }
 
-        private Bitmap ResizeImage(Image image, int width, int height)
+        private Bitmap TrimTransparent(Bitmap source)
         {
-            var destRect = new Rectangle(0, 0, width, height);
-            var destImage = new Bitmap(width, height);
-            destImage.SetResolution(image.HorizontalResolution, image.VerticalResolution);
-            using (var graphics = Graphics.FromImage(destImage))
+            if (source == null) return null;
+
+            System.Drawing.Imaging.BitmapData data = source.LockBits(new Rectangle(0, 0, source.Width, source.Height), System.Drawing.Imaging.ImageLockMode.ReadOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            
+            int top = -1, bottom = -1, left = -1, right = -1;
+
+            try
             {
-                graphics.CompositingMode = CompositingMode.SourceCopy;
-                graphics.CompositingQuality = CompositingQuality.HighSpeed;
-                graphics.InterpolationMode = InterpolationMode.Bilinear;
-                graphics.SmoothingMode = SmoothingMode.HighSpeed;
-                graphics.PixelOffsetMode = PixelOffsetMode.HighSpeed;
-                using (var wrapMode = new System.Drawing.Imaging.ImageAttributes())
+                unsafe
                 {
-                    wrapMode.SetWrapMode(WrapMode.TileFlipXY);
-                    graphics.DrawImage(image, destRect, 0, 0, image.Width, image.Height, GraphicsUnit.Pixel, wrapMode);
+                    byte* ptr = (byte*)data.Scan0;
+                    int stride = data.Stride;
+                    int width = source.Width;
+                    int height = source.Height;
+
+                    for (int y = 0; y < height; y++)
+                    {
+                        for (int x = 0; x < width; x++)
+                        {
+                            if (ptr[y * stride + x * 4 + 3] > 0)
+                            {
+                                top = y;
+                                break;
+                            }
+                        }
+                        if (top != -1) break;
+                    }
+
+                    if (top == -1)     
+                    {
+                        return new Bitmap(1, 1);
+                    }
+
+                    for (int y = height - 1; y >= top; y--)
+                    {
+                        for (int x = 0; x < width; x++)
+                        {
+                            if (ptr[y * stride + x * 4 + 3] > 0)
+                            {
+                                bottom = y;
+                                break;
+                            }
+                        }
+                        if (bottom != -1) break;
+                    }
+
+                    for (int x = 0; x < width; x++)
+                    {
+                        for (int y = top; y <= bottom; y++)
+                        {
+                            if (ptr[y * stride + x * 4 + 3] > 0)
+                            {
+                                left = x;
+                                break;
+                            }
+                        }
+                        if (left != -1) break;
+                    }
+
+                    for (int x = width - 1; x >= left; x--)
+                    {
+                        for (int y = top; y <= bottom; y++)
+                        {
+                            if (ptr[y * stride + x * 4 + 3] > 0)
+                            {
+                                right = x;
+                                break;
+                            }
+                        }
+                        if (right != -1) break;
+                    }
                 }
             }
-            return destImage;
+            finally
+            {
+                source.UnlockBits(data);
+            }
+
+            if (left == -1 || right == -1 || top == -1 || bottom == -1) return new Bitmap(source);
+
+            int newWidth = right - left + 1;
+            int newHeight = bottom - top + 1;
+
+            Bitmap cropped = new Bitmap(newWidth, newHeight);
+            using (Graphics g = Graphics.FromImage(cropped))
+            {
+                g.DrawImage(source, new Rectangle(0, 0, newWidth, newHeight), new Rectangle(left, top, newWidth, newHeight), GraphicsUnit.Pixel);
+            }
+
+            return cropped;
+        }
+
+        private Bitmap ResizeHighQuality(Image src, int width, int height)
+        {
+            var dest = new Bitmap(width, height);
+            using (var g = Graphics.FromImage(dest))
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = SmoothingMode.HighQuality;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.DrawImage(src, 0, 0, width, height);
+            }
+            return dest;
         }
 
         private Bitmap CreateYouTubeFolderIcon()

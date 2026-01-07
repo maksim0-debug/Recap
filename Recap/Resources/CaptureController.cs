@@ -26,14 +26,16 @@ namespace Recap
         private readonly OcrDatabase _ocrDb;
         private readonly string _tempOcrPath;
         private readonly OcrService _ocrService;
+        private readonly IconManager _iconManager;
 
-        public CaptureController(ScreenshotService screenshotService, FrameRepository frameRepository, AppSettings settings, OcrDatabase ocrDb, OcrService ocrService = null)
+        public CaptureController(ScreenshotService screenshotService, FrameRepository frameRepository, AppSettings settings, OcrDatabase ocrDb, OcrService ocrService = null, IconManager iconManager = null)
         {
             _screenshotService = screenshotService;
             _frameRepository = frameRepository;
             _settings = settings;
             _ocrDb = ocrDb;
             _ocrService = ocrService;
+            _iconManager = iconManager;
 
             _screenshotService.Settings = _settings;
 
@@ -103,8 +105,9 @@ namespace Recap
             if (result.JpegBytes != null)
             {
                 _lastScreenshotHash = result.NewHash;
-
-                string processName = ActiveWindowHelper.GetActiveWindowProcessName();
+                
+                IntPtr hWnd = ActiveWindowHelper.GetActiveWindowHandle();
+                string processName = ActiveWindowHelper.GetProcessNameFromHwnd(hWnd);
                 string finalAppName = processName;
                 string procLower = processName.ToLower();
 
@@ -122,7 +125,7 @@ namespace Recap
                 }
                 else if (procLower.Contains("telegram") || procLower.Contains("ayugram") || procLower.Contains("kotatogram"))
                 {
-                    string title = ActiveWindowHelper.GetActiveWindowTitle();
+                    string title = ActiveWindowHelper.GetWindowTitleFromHwnd(hWnd);
 
                     if (!string.IsNullOrWhiteSpace(title))
                     {
@@ -144,6 +147,8 @@ namespace Recap
 
                 if (newFrame.HasValue)
                 {
+                    _iconManager?.TryFetchIconFromHwnd(hWnd, finalAppName);
+
                     if (!string.IsNullOrEmpty(tempFile) && System.IO.File.Exists(tempFile))
                     {
                         try

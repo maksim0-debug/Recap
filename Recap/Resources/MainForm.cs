@@ -102,7 +102,7 @@ namespace Recap
             _statisticsViewController?.Dispose();
             _hourlyStatisticsController?.Dispose();
 
-            _captureController = new CaptureController(_screenshotService, _frameRepository, _currentSettings, _ocrDb, _ocrService);
+            _captureController = new CaptureController(_screenshotService, _frameRepository, _currentSettings, _ocrDb, _ocrService, _iconManager);
             _captureController.FrameCaptured += OnFrameCaptured;
             _captureController.DayChanged += OnDayChanged;
 
