@@ -2,6 +2,7 @@
   <a href="README.md"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
   <a href="README.ru.md"><img src="https://img.shields.io/badge/lang-Русский-green.svg" alt="Russian"></a>
   <a href="README.uk.md"><img src="https://img.shields.io/badge/lang-Українська-yellow.svg" alt="Ukrainian"></a>
+  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/lang-简体中文-red.svg" alt="Chinese"></a>
 </div>
 
 <br/>
