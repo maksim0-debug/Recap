@@ -1,3 +1,11 @@
+<div align="center">
+  <a href="README.md"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
+  <a href="README.ru.md"><img src="https://img.shields.io/badge/lang-Русский-green.svg" alt="Russian"></a>
+  <a href="README.uk.md"><img src="https://img.shields.io/badge/lang-Українська-yellow.svg" alt="Ukrainian"></a>
+</div>
+
+<br/>
+
 # 📼 Recap — An Open-Source Alternative to "Windows Recall"
 
 > **Your personal time machine. Local. Private. Free.**
