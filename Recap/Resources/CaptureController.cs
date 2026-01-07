@@ -107,7 +107,9 @@ namespace Recap
                 _lastScreenshotHash = result.NewHash;
                 
                 IntPtr hWnd = ActiveWindowHelper.GetActiveWindowHandle();
-                string processName = ActiveWindowHelper.GetProcessNameFromHwnd(hWnd);
+                IntPtr realHwnd = ActiveWindowHelper.GetRealWindow(hWnd);
+
+                string processName = ActiveWindowHelper.GetProcessNameFromHwnd(realHwnd);
                 string finalAppName = processName;
                 string procLower = processName.ToLower();
 
@@ -147,7 +149,7 @@ namespace Recap
 
                 if (newFrame.HasValue)
                 {
-                    _iconManager?.TryFetchIconFromHwnd(hWnd, finalAppName);
+                    _iconManager?.TryFetchIconFromHwnd(realHwnd, finalAppName);
 
                     if (!string.IsNullOrEmpty(tempFile) && System.IO.File.Exists(tempFile))
                     {

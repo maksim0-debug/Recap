@@ -9,9 +9,51 @@ namespace Recap
         [DllImport("user32.dll")]
         private static extern IntPtr GetForegroundWindow();
 
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool EnumChildWindows(IntPtr hwndParent, EnumWindowProc lpEnumFunc, IntPtr lParam);
+
+        private delegate bool EnumWindowProc(IntPtr hWnd, IntPtr lParam);
+
         public static IntPtr GetActiveWindowHandle()
         {
             return GetForegroundWindow();
+        }
+
+        public static IntPtr GetRealWindow(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return IntPtr.Zero;
+
+            try
+            {
+                GetWindowThreadProcessId(hwnd, out uint pid);
+                var p = System.Diagnostics.Process.GetProcessById((int)pid);
+
+                if (p.ProcessName.Equals("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
+                {
+                    IntPtr foundChild = IntPtr.Zero;
+                    uint hostPid = pid;
+
+                    EnumChildWindows(hwnd, (childHwnd, lParam) =>
+                    {
+                        GetWindowThreadProcessId(childHwnd, out uint childPid);
+                        if (childPid != hostPid)
+                        {
+                            foundChild = childHwnd;
+                            return false;   
+                        }
+                        return true;
+                    }, IntPtr.Zero);
+
+                    if (foundChild != IntPtr.Zero)
+                    {
+                        return foundChild;
+                    }
+                }
+            }
+            catch { }
+
+            return hwnd;
         }
 
 
