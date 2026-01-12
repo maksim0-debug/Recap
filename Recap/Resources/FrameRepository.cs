@@ -443,6 +443,91 @@ namespace Recap
             catch (Exception ex) { DebugLogger.LogError("FrameRepository.SaveFrame", ex); return null; }
         }
 
+        public int RepairDayFromBinaryFile(string schPath, IProgress<string> progress)
+        {
+            if (!File.Exists(schPath)) return 0;
+            string filename = Path.GetFileNameWithoutExtension(schPath);  
+            var batchList = new List<FrameIndex>();
+            int totalRestored = 0;
+            
+            try
+            {
+                using (var fs = new FileStream(schPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                using (var br = new BinaryReader(fs))
+                {
+                    long len = fs.Length;
+                    int processedInBatch = 0;
+
+                    while (fs.Position < len)
+                    {
+                        try 
+                        {
+                            long startPos = fs.Position;
+                            
+                            if (startPos + 8 + 4 > len) break;
+
+                            long ticks = br.ReadInt64();
+                            int nameLen = br.ReadInt32();
+                            
+                            if (nameLen < 0 || nameLen > 1024) 
+                            { 
+                                progress?.Report($"Corruption at {startPos}. Stopping.");
+                                break; 
+                            }
+                            
+                            if (fs.Position + nameLen + 4 > len) break;
+
+                            byte[] nameBytes = br.ReadBytes(nameLen);
+                            string appName = Encoding.UTF8.GetString(nameBytes);
+                            
+                            int dataLen = br.ReadInt32();
+                            long dataOffset = fs.Position;
+                            
+                            if (fs.Position + dataLen > len) break;
+                            
+                            fs.Seek(dataLen, SeekOrigin.Current);
+                            
+                            batchList.Add(new FrameIndex 
+                            { 
+                                TimestampTicks = ticks, 
+                                AppName = appName, 
+                                DataOffset = dataOffset, 
+                                DataLength = dataLen 
+                            });
+                            
+                            processedInBatch++;
+
+                            if (batchList.Count >= 500)
+                            {
+                                _ocrDb?.RestoreFramesMetaBulk(batchList, filename);
+                                totalRestored += batchList.Count;
+                                progress?.Report($"Scanned {totalRestored} frames...");
+                                batchList.Clear();
+                            }
+                        } 
+                        catch (EndOfStreamException) { break; }
+                        catch (Exception ex) 
+                        { 
+                            DebugLogger.LogError("RepairDayFromBinaryFile.Loop", ex);
+                            break; 
+                        }
+                    }
+                    
+                    if (batchList.Count > 0)
+                    {
+                        _ocrDb?.RestoreFramesMetaBulk(batchList, filename);
+                        totalRestored += batchList.Count;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                 DebugLogger.LogError("RepairDayFromBinaryFile.Main", ex);
+            }
+
+            return totalRestored;
+        }
+
         public byte[] GetFrameData(FrameIndex frame)
         {
             if (frame.DataLength == -1) return null;   

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -38,6 +39,7 @@ namespace Recap
         private bool _isRunning;
         private OcrEngine _ocrEngine;
         private readonly SemaphoreSlim _signal = new SemaphoreSlim(0);
+        private readonly ConcurrentQueue<(Bitmap Image, long Timestamp)> _memoryQueue = new ConcurrentQueue<(Bitmap, long)>();
 
         public bool EnableOCR { get; set; } = true;
         public bool EnableTextHighlighting { get; set; } = true;
@@ -61,6 +63,31 @@ namespace Recap
             }
             
             InitializeOcr();
+        }
+
+        public void EnqueueImage(Bitmap image, long timestamp)
+        {
+            if (_memoryQueue.Count > 10)
+            {
+                try
+                {
+                    string filePath = Path.Combine(_tempPath, timestamp + ".jpg");
+                    image.Save(filePath, ImageFormat.Jpeg);
+                }
+                catch (Exception ex)
+                {
+                    DebugLogger.LogError("OcrService.Spill", ex);
+                }
+                finally
+                {
+                    image.Dispose();
+                }
+            }
+            else
+            {
+                _memoryQueue.Enqueue((image, timestamp));
+            }
+            SignalNewWork();
         }
 
         private void InitializeOcr()
@@ -146,6 +173,16 @@ namespace Recap
                         continue;
                     }
 
+                    if (_memoryQueue.TryDequeue(out var queueItem))
+                    {
+                        using (var bmp = queueItem.Image)
+                        {
+                            var result = await RecognizeBitmapAsync(bmp);
+                            ProcessOcrResult(queueItem.Timestamp, result);
+                        }
+                        continue; 
+                    }
+
                     loopCount++;
                     
                     if (loopCount % 300 == 0)
@@ -178,6 +215,8 @@ namespace Recap
 
                     foreach (var timestamp in unprocessed)
                     {
+                        if (_memoryQueue.Count > 0) break;    
+
                         if (!_isRunning) break;
 
                         float currentTotal = _cpuCounter.NextValue();
@@ -198,37 +237,8 @@ namespace Recap
                         string filePath = Path.Combine(_tempPath, timestamp + ".jpg");
                         if (File.Exists(filePath))
                         {
-                            bool enableSearch = AdvancedSettings.Instance.EnableTextSearch;
-                            bool enableCoords = AdvancedSettings.Instance.EnableTextCoordinates;
-
-                            if (!enableSearch && !enableCoords)
-                            {
-                                _db.MarkAsProcessed(timestamp, "", null, false);
-                                try { File.Delete(filePath); } catch { }
-                                continue;
-                            }
-
                             var result = await PerformOcrAsync(filePath);
-                            
-                            bool isDuplicate = false;
-                            if (EnableOCR)
-                            {
-                                double similarity = CalculateSimilarity(_lastText, result.Text);
-                                if (similarity > AdvancedSettings.Instance.OcrDuplicateThreshold)    
-                                {
-                                    isDuplicate = true;
-                                }
-                                else
-                                {
-                                    _lastText = result.Text;
-                                }
-                            }
-
-                            byte[] dataToSave = (enableCoords && !isDuplicate) ? result.Data : null;
-                            string textToSave = enableSearch ? result.Text : "";
-                            
-                            _db.MarkAsProcessed(timestamp, textToSave, dataToSave, isDuplicate);
-                            
+                            ProcessOcrResult(timestamp, result);
                             try { File.Delete(filePath); } catch { }
                         }
                         else
@@ -245,6 +255,37 @@ namespace Recap
             }
         }
 
+        private void ProcessOcrResult(long timestamp, (string Text, byte[] Data) result)
+        {
+            bool enableSearch = AdvancedSettings.Instance.EnableTextSearch;
+            bool enableCoords = this.EnableTextHighlighting;
+
+            if (!enableSearch && !enableCoords)
+            {
+                _db.MarkAsProcessed(timestamp, "", null, false);
+                return;
+            }
+
+            bool isDuplicate = false;
+            if (EnableOCR)
+            {
+                double similarity = CalculateSimilarity(_lastText, result.Text);
+                if (similarity > AdvancedSettings.Instance.OcrDuplicateThreshold)    
+                {
+                    isDuplicate = true;
+                }
+                else
+                {
+                    _lastText = result.Text;
+                }
+            }
+
+            byte[] dataToSave = (enableCoords && !isDuplicate) ? result.Data : null;
+            string textToSave = enableSearch ? result.Text : "";
+            
+            _db.MarkAsProcessed(timestamp, textToSave, dataToSave, isDuplicate);
+        }
+
         private async Task<(string Text, byte[] Data)> PerformOcrAsync(string imagePath)
         {
             if (_ocrEngine == null) return ("", null);
@@ -253,67 +294,7 @@ namespace Recap
             {
                 using (var originalBitmap = new Bitmap(imagePath))
                 {
-                    double scale = AdvancedSettings.Instance.OcrScaleFactor;
-                    int newWidth = (int)(originalBitmap.Width * scale);
-                    int newHeight = (int)(originalBitmap.Height * scale);
-
-                    using (var scaledBitmap = new Bitmap(newWidth, newHeight))
-                    {
-                        using (var g = Graphics.FromImage(scaledBitmap))
-                        {
-                            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                            g.CompositingQuality = CompositingQuality.HighQuality;
-
-                            g.DrawImage(originalBitmap, 0, 0, newWidth, newHeight);
-                        }
-
-                        using (var ms = new MemoryStream())
-                        {
-                            scaledBitmap.Save(ms, ImageFormat.Png);
-                            ms.Position = 0;
-
-                            var randomAccessStream = new InMemoryRandomAccessStream();
-                            await RandomAccessStream.CopyAsync(ms.AsInputStream(), randomAccessStream.GetOutputStreamAt(0));
-                            
-                            BitmapDecoder decoder = await BitmapDecoder.CreateAsync(randomAccessStream);
-                            using (SoftwareBitmap softwareBitmap = await decoder.GetSoftwareBitmapAsync())
-                            {
-                                var ocrResult = await _ocrEngine.RecognizeAsync(softwareBitmap);
-                                
-                                var wordsList = new List<WordData>();
-                                foreach (var line in ocrResult.Lines)
-                                {
-                                    foreach (var word in line.Words)
-                                    {
-                                        wordsList.Add(new WordData
-                                        {
-                                            T = word.Text,
-                                            X = (float)word.BoundingRect.X / newWidth,
-                                            Y = (float)word.BoundingRect.Y / newHeight,
-                                            W = (float)word.BoundingRect.Width / newWidth,
-                                            H = (float)word.BoundingRect.Height / newHeight
-                                        });
-                                    }
-                                }
-
-                                byte[] compressedData = null;
-                                if (wordsList.Count > 0)
-                                {
-                                    try 
-                                    {
-                                        compressedData = BinaryCoordinatesPacker.Pack(wordsList);
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        DebugLogger.LogError("OcrService.PackCoordinates", ex);
-                                    }
-                                }
-
-                                return (ocrResult.Text, compressedData);
-                            }
-                        }
-                    }
+                    return await RecognizeBitmapAsync(originalBitmap);
                 }
             }
             catch (Exception ex)
@@ -358,6 +339,84 @@ namespace Recap
                 }
             }
             return d[n, m];
+        }
+
+        private async Task<(string Text, byte[] Data)> RecognizeBitmapAsync(Bitmap originalBitmap)
+        {
+            if (_ocrEngine == null) return ("", null);
+            try
+            {
+                double scale = AdvancedSettings.Instance.OcrScaleFactor;
+                int newWidth = (int)(originalBitmap.Width * scale);
+                int newHeight = (int)(originalBitmap.Height * scale);
+
+                using (var scaledBitmap = new Bitmap(newWidth, newHeight))
+                {
+                    using (var g = Graphics.FromImage(scaledBitmap))
+                    {
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        g.CompositingQuality = CompositingQuality.HighQuality;
+
+                        g.DrawImage(originalBitmap, 0, 0, newWidth, newHeight);
+                    }
+
+                    using (var stream = new InMemoryRandomAccessStream())
+                    {
+                        using (var ms = new MemoryStream()) 
+                        {
+                            scaledBitmap.Save(ms, ImageFormat.Png);
+                            ms.Position = 0;   
+                            
+                            await ms.CopyToAsync(stream.AsStreamForWrite());
+                            await stream.FlushAsync();
+                        }
+                        stream.Seek(0);
+                        
+                        var decoder = await BitmapDecoder.CreateAsync(stream);
+                        using (var softwareBitmap = await decoder.GetSoftwareBitmapAsync())
+                        {
+                            var ocrResult = await _ocrEngine.RecognizeAsync(softwareBitmap);
+                            
+                            var wordsList = new List<WordData>();
+                            foreach (var line in ocrResult.Lines)
+                            {
+                                foreach (var word in line.Words)
+                                {
+                                    wordsList.Add(new WordData
+                                    {
+                                        T = word.Text,
+                                        X = (float)word.BoundingRect.X / newWidth,
+                                        Y = (float)word.BoundingRect.Y / newHeight,
+                                        W = (float)word.BoundingRect.Width / newWidth,
+                                        H = (float)word.BoundingRect.Height / newHeight
+                                    });
+                                }
+                            }
+
+                            byte[] compressedData = null;
+                            if (wordsList.Count > 0)
+                            {
+                                try 
+                                {
+                                    compressedData = BinaryCoordinatesPacker.Pack(wordsList);
+                                }
+                                catch (Exception ex)
+                                {
+                                    DebugLogger.LogError("OcrService.PackCoordinates", ex);
+                                }
+                            }
+
+                            return (ocrResult.Text, compressedData);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.LogError("OcrService.RecognizeBitmap", ex);
+                return ("", null);
+            }
         }
 
         private async Task RescueOrphanedFiles()

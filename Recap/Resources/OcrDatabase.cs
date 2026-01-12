@@ -3,10 +3,12 @@ using System.Collections.Generic;
 using System.Data;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
+using Recap.Utilities;
 
 namespace Recap
 {
@@ -376,6 +378,8 @@ namespace Recap
                 }
                 catch (Exception ex) { DebugLogger.LogError("OcrDatabase.AppIdMigration", ex); }
 
+                try { using (var cmd = new SqliteCommand("ALTER TABLE Frames ADD COLUMN OcrText TEXT;", connection)) cmd.ExecuteNonQuery(); } catch { }
+
                 try { using (var cmd = new SqliteCommand("CREATE INDEX IF NOT EXISTS idx_framesmeta_covering_v2 ON FramesMeta(Timestamp, AppID, DataOffset, DataLength)", connection)) cmd.ExecuteNonQuery(); } catch { }
 
                 try
@@ -545,7 +549,7 @@ namespace Recap
                                         if (timestampToId.TryGetValue(item.ts, out long frameId))
                                         {
                                             pRowId.Value = frameId;
-                                            pText.Value = item.text.ToLowerInvariant();
+                                            pText.Value = TextCleaner.Normalize(item.text).ToLowerInvariant();
                                             pApp.Value = item.app;
                                             pTs.Value = item.ts;
                                             
@@ -652,7 +656,7 @@ namespace Recap
                                     foreach (var item in framesToReindex)
                                     {
                                         pRowId.Value = item.rowid;
-                                        pText.Value = item.text.ToLowerInvariant();
+                                        pText.Value = TextCleaner.Normalize(item.text).ToLowerInvariant();
                                         pApp.Value = item.app;
                                         pTs.Value = item.ts;
                                         insertCmd.ExecuteNonQuery();
@@ -747,7 +751,7 @@ namespace Recap
                                                     foreach (var item in framesToMigrate)
                                                     {
                                                         pRowId.Value = item.rowid;
-                                                        pText.Value = item.text.ToLowerInvariant();
+                                                        pText.Value = TextCleaner.Normalize(item.text).ToLowerInvariant();
                                                         pApp.Value = item.app;
                                                         pTs.Value = item.ts;
                                                         insertCmd.ExecuteNonQuery();
@@ -759,10 +763,6 @@ namespace Recap
                                     }
                                 }
 
-                                using (var clearCmd = new SqliteCommand("UPDATE Frames SET OcrText = NULL", connection))
-                                {
-                                    clearCmd.ExecuteNonQuery();
-                                }
                             }
                         }
                     }
@@ -833,7 +833,7 @@ namespace Recap
                 {
                     try
                     {
-                        string sql = "UPDATE Frames SET IsProcessed = 1, TextData = @blob WHERE Timestamp = @ts";
+                        string sql = "UPDATE Frames SET IsProcessed = 1, TextData = @blob, OcrText = @text WHERE Timestamp = @ts";
                         using (var command = new SqliteCommand(sql, connection, transaction))
                         {
                             command.Parameters.AddWithValue("@ts", timestamp);
@@ -845,6 +845,16 @@ namespace Recap
                             {
                                 command.Parameters.Add("@blob", SqliteType.Blob).Value = DBNull.Value;
                             }
+
+                            if (!isDuplicate && !string.IsNullOrWhiteSpace(text))
+                            {
+                                command.Parameters.AddWithValue("@text", text);
+                            }
+                            else
+                            {
+                                command.Parameters.AddWithValue("@text", DBNull.Value);
+                            }
+                            
                             command.ExecuteNonQuery();
                         }
 
@@ -875,7 +885,7 @@ namespace Recap
                                 using (var ftsCmd = new SqliteCommand(ftsInsertSql, connection, transaction))
                                 {
                                     ftsCmd.Parameters.AddWithValue("@rowid", frameId);
-                                    ftsCmd.Parameters.AddWithValue("@text", text.ToLowerInvariant());
+                                    ftsCmd.Parameters.AddWithValue("@text", TextCleaner.Normalize(text).ToLowerInvariant());
                                     ftsCmd.Parameters.AddWithValue("@app", appName);
                                     ftsCmd.Parameters.AddWithValue("@ts", timestamp);
                                     ftsCmd.ExecuteNonQuery();
@@ -891,6 +901,52 @@ namespace Recap
                         throw;
                     }
                 }
+            });
+        }
+
+        public string GetOcrText(long timestamp)
+        {
+            return ExecuteScalarWithRetry(connection =>
+            {
+                try
+                {
+                    string sql = "SELECT OcrText FROM Frames WHERE Timestamp <= @ts AND OcrText IS NOT NULL ORDER BY Timestamp DESC LIMIT 1";
+                    using (var command = new SqliteCommand(sql, connection))
+                    {
+                        command.Parameters.AddWithValue("@ts", timestamp);
+                        var result = command.ExecuteScalar();
+                        if (result != null && result != DBNull.Value)
+                        {
+                            return result.ToString();
+                        }
+                    }
+                    
+                    string blobSql = "SELECT TextData FROM Frames WHERE Timestamp <= @ts AND TextData IS NOT NULL ORDER BY Timestamp DESC LIMIT 1";
+                    using (var cmd = new SqliteCommand(blobSql, connection))
+                    {
+                        cmd.Parameters.AddWithValue("@ts", timestamp);
+                        var blobResult = cmd.ExecuteScalar();
+                        if (blobResult != null && blobResult != DBNull.Value)
+                        {
+                            byte[] blob = (byte[])blobResult;
+                            try 
+                            {
+                                var words = BinaryCoordinatesPacker.Unpack(blob);
+                                StringBuilder sb = new StringBuilder();
+                                foreach (var w in words) sb.Append(w.T).Append(" ");
+                                string recovered = sb.ToString().Trim();
+                                
+                                if (!string.IsNullOrEmpty(recovered))
+                                {
+                                    return recovered;
+                                }
+                            }
+                            catch {}
+                        }
+                    }
+                }
+                catch { }
+                return null;
             });
         }
 
@@ -1210,6 +1266,106 @@ namespace Recap
                         }
                     }
                     transaction.Commit();
+                }
+            });
+        }
+
+        public void RestoreFramesMetaBulk(List<FrameIndex> frames, string dayStr)
+        {
+            if (frames == null || frames.Count == 0) return;
+
+            ExecuteWithRetry(connection =>
+            {
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        var cmdGetApp = new SqliteCommand("SELECT ID FROM Apps WHERE Name = @name", connection, transaction);
+                        cmdGetApp.Parameters.Add("@name", SqliteType.Text);
+
+                        var cmdInsApp = new SqliteCommand("INSERT INTO Apps (Name) VALUES (@name)", connection, transaction);
+                        cmdInsApp.Parameters.Add("@name", SqliteType.Text);
+
+                        var cmdMeta = new SqliteCommand(
+                           "INSERT OR IGNORE INTO FramesMeta (Timestamp, DayStr, AppName, AppID, DataOffset, DataLength) VALUES (@ts, @day, @app, @appid, @offset, @len)",
+                           connection, transaction);
+                        var pH_ts = cmdMeta.Parameters.Add("@ts", SqliteType.Integer);
+                        var pH_day = cmdMeta.Parameters.Add("@day", SqliteType.Text);
+                        var pH_app = cmdMeta.Parameters.Add("@app", SqliteType.Text);
+                        var pH_appid = cmdMeta.Parameters.Add("@appid", SqliteType.Integer);
+                        var pH_offset = cmdMeta.Parameters.Add("@offset", SqliteType.Integer);
+                        var pH_len = cmdMeta.Parameters.Add("@len", SqliteType.Integer);
+
+                        var cmdFrames = new SqliteCommand(
+                           "INSERT OR IGNORE INTO Frames (Timestamp, AppName, IsProcessed, TextData, OcrText) VALUES (@ts, @app, 1, NULL, '')",
+                           connection, transaction);
+                        var pF_ts = cmdFrames.Parameters.Add("@ts", SqliteType.Integer);
+                        var pF_app = cmdFrames.Parameters.Add("@app", SqliteType.Text);
+
+                        var appIdCache = new Dictionary<string, long>();
+
+                        foreach (var fr in frames)
+                        {
+                            string appName = fr.AppName ?? "Unknown";
+                            
+                            long appId;
+                            if (!appIdCache.TryGetValue(appName, out appId))
+                            {
+                                cmdGetApp.Parameters["@name"].Value = appName;
+                                var res = cmdGetApp.ExecuteScalar();
+                                if (res != null)
+                                {
+                                    appId = Convert.ToInt64(res);
+                                }
+                                else
+                                {
+                                    cmdInsApp.Parameters["@name"].Value = appName;
+                                    cmdInsApp.ExecuteNonQuery();
+                                    
+                                    using (var cmdRowId = new SqliteCommand("SELECT last_insert_rowid()", connection, transaction))
+                                    {
+                                        appId = (long)cmdRowId.ExecuteScalar();
+                                    }
+                                }
+                                appIdCache[appName] = appId;
+                            }
+
+                            pH_ts.Value = fr.TimestampTicks;
+                            pH_day.Value = dayStr;
+                            pH_app.Value = appName;
+                            pH_appid.Value = appId;
+                            pH_offset.Value = fr.DataOffset;
+                            pH_len.Value = fr.DataLength;
+                            cmdMeta.ExecuteNonQuery();
+
+                            pF_ts.Value = fr.TimestampTicks;
+                            pF_app.Value = appName;
+                            cmdFrames.ExecuteNonQuery();
+                        }
+
+                        var cmdCount = new SqliteCommand("SELECT COUNT(*) FROM FramesMeta WHERE DayStr = @day", connection, transaction);
+                        cmdCount.Parameters.AddWithValue("@day", dayStr);
+                        long totalCount = (long)cmdCount.ExecuteScalar();
+
+                        var cmdIndex = new SqliteCommand(
+                            "INSERT OR REPLACE INTO IndexedDays (DayStr, FrameCount, LastIndexed) VALUES (@day, @count, @now)",
+                            connection, transaction);
+                        cmdIndex.Parameters.AddWithValue("@day", dayStr);
+                        cmdIndex.Parameters.AddWithValue("@count", totalCount);
+                        cmdIndex.Parameters.AddWithValue("@now", DateTime.UtcNow.Ticks);
+                        cmdIndex.ExecuteNonQuery();
+
+                        var cmdStats = new SqliteCommand("DELETE FROM DailyActivityStats WHERE DayStr = @day", connection, transaction);
+                        cmdStats.Parameters.AddWithValue("@day", dayStr);
+                        cmdStats.ExecuteNonQuery();
+
+                        transaction.Commit();
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugLogger.LogError("RestoreFramesMetaBulk", ex);
+                        throw;
+                    }
                 }
             });
         }
@@ -1699,6 +1855,114 @@ namespace Recap
                     }
                 }
                 return dict;
+            });
+        }
+
+        public void RebuildSearchIndex(IProgress<int> progress = null)
+        {
+            ExecuteWithRetry(connection =>
+            {
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        using (var clearCmd = new SqliteCommand("INSERT INTO SearchIndexV2(SearchIndexV2) VALUES('delete-all')", connection, transaction))
+                        {
+                            clearCmd.ExecuteNonQuery();
+                        }
+
+                        long lastId = -1;
+                        int count = 0;
+                        bool hasMore = true;
+
+                        var insertCmd = new SqliteCommand("INSERT INTO SearchIndexV2(rowid, OcrText, AppName, Timestamp) VALUES (@rowid, @text, @app, @ts)", connection, transaction);
+                        var pRowId = insertCmd.Parameters.Add("@rowid", SqliteType.Integer);
+                        var pText = insertCmd.Parameters.Add("@text", SqliteType.Text);
+                        var pApp = insertCmd.Parameters.Add("@app", SqliteType.Text);
+                        var pTs = insertCmd.Parameters.Add("@ts", SqliteType.Integer);
+
+                        while (hasMore)
+                        {
+                            hasMore = false;
+                            string sql = @"SELECT ID, Timestamp, AppName, TextData 
+                                           FROM Frames 
+                                           WHERE ID > @lastId AND IsProcessed = 1 AND TextData IS NOT NULL 
+                                           ORDER BY ID ASC LIMIT 100";
+                            
+                            using (var readCmd = new SqliteCommand(sql, connection, transaction))
+                            {
+                                readCmd.Parameters.AddWithValue("@lastId", lastId);
+                                using (var reader = readCmd.ExecuteReader())
+                                {
+                                    while (reader.Read())
+                                    {
+                                        hasMore = true;
+                                        long rowid = reader.GetInt64(0);
+                                        lastId = rowid;
+                                        long ts = reader.GetInt64(1);
+                                        string app = reader.IsDBNull(2) ? "" : reader.GetString(2);
+                                        
+                                        if (!reader.IsDBNull(3))
+                                        {
+                                            byte[] blob = (byte[])reader.GetValue(3);
+                                            try 
+                                            {
+                                                var words = BinaryCoordinatesPacker.Unpack(blob);
+                                                if (words != null && words.Count > 0)
+                                                {
+                                                    var sb = new StringBuilder();
+                                                    foreach (var w in words)
+                                                    {
+                                                        sb.Append(w.T).Append(" ");
+                                                    }
+                                                    
+                                                    string rawText = sb.ToString();
+                                                    string cleanText = TextCleaner.Normalize(rawText);
+                                                    
+                                                    if (!string.IsNullOrWhiteSpace(cleanText))
+                                                    {
+                                                        pRowId.Value = rowid;
+                                                        pText.Value = cleanText.ToLowerInvariant();
+                                                        pApp.Value = app;
+                                                        pTs.Value = ts;
+                                                        insertCmd.ExecuteNonQuery();
+                                                    }
+                                                }
+                                            }
+                                            catch (Exception ex)
+                                            {
+                                                DebugLogger.LogError($"RebuildIndex error at ID {rowid}", ex);
+                                            }
+                                        }
+
+                                        count++;
+                                        if (count % 100 == 0) progress?.Report(count);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        transaction.Commit();
+                    }
+                    catch
+                    {
+                        transaction.Rollback();
+                        throw;
+                    }
+                }
+
+                try
+                {
+                    using (var vacuumCmd = new SqliteCommand("VACUUM;", connection))
+                    {
+                        vacuumCmd.ExecuteNonQuery();
+                    }
+                    DebugLogger.Log("VACUUM completed after rebuild.");
+                }
+                catch (Exception ex)
+                {
+                    DebugLogger.LogError("RebuildIndex VACUUM", ex);
+                }
             });
         }
 

@@ -117,7 +117,6 @@ namespace Recap
             if (_txtOcrSearch != null)
             {
                 _txtOcrSearch.KeyDown += OnOcrSearchKeyDown;
-                _txtOcrSearch.TextChanged += OnOcrSearchTextChanged;
             }
         }
 
@@ -251,6 +250,12 @@ namespace Recap
         {
             try
             {
+                string text = _ocrDb.GetOcrText(timestamp);
+                if (!string.IsNullOrEmpty(text))
+                {
+                    return text;
+                }
+
                 var compressedData = _ocrDb.GetTextData(timestamp);
                 if (compressedData != null)
                 {
@@ -273,6 +278,11 @@ namespace Recap
             string appName = "";
             if (_appMap.TryGetValue(frame.AppId, out string name)) appName = name;
             return $"{time:yyyy-MM-dd HH:mm:ss} - {appName}";
+        }
+
+        public void ApplyFilter()
+        {
+            ApplyAppFilterAndDisplay(false);
         }
 
         private void OnOcrSearchTextChanged(object sender, EventArgs e)

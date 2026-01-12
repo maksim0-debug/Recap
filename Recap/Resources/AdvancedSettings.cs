@@ -3,13 +3,14 @@ using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Windows.Forms;
 
 namespace Recap
 {
     public class AdvancedSettings
     {
         private static AdvancedSettings _instance;
-        private static readonly string ConfigPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "advanced.config");
+        private static readonly string ConfigPath = Path.Combine(Application.LocalUserAppDataPath, "advanced.config");
 
         public static AdvancedSettings Instance
         {
@@ -30,28 +31,51 @@ namespace Recap
                 try
                 {
                     string json = File.ReadAllText(ConfigPath);
-                    _instance = JsonSerializer.Deserialize<AdvancedSettings>(json);
-                    return;
+                    var options = new JsonSerializerOptions 
+                    { 
+                        PropertyNameCaseInsensitive = true,
+                        ReadCommentHandling = JsonCommentHandling.Skip
+                    };
+                    _instance = JsonSerializer.Deserialize<AdvancedSettings>(json, options);
                 }
                 catch (Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"Failed to load advanced settings: {ex.Message}");
                 }
             }
-            _instance = new AdvancedSettings();
+            
+            if (_instance == null)
+            {
+                _instance = new AdvancedSettings();
+                try 
+                {
+                   _instance.Save();    
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Failed to create initial settings file: {ex.Message}");
+                }
+            }
         }
 
         public void Save()
         {
             try
             {
-                var options = new JsonSerializerOptions { WriteIndented = true };
+                Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath));
+
+                var options = new JsonSerializerOptions 
+                { 
+                    WriteIndented = true,
+                    PropertyNameCaseInsensitive = true
+                };
                 string json = JsonSerializer.Serialize(this, options);
                 File.WriteAllText(ConfigPath, json);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to save advanced settings: {ex.Message}");
+                DebugLogger.LogError("AdvancedSettings.Save", ex);
+                throw;
             }
         }
 
@@ -69,6 +93,16 @@ namespace Recap
         [Description("Number of threads for SQLite operations. Default: 4.")]
         [DefaultValue(4)]
         public int DbThreads { get; set; } = 4;
+
+        [Category("4. OCR")]
+        [Description("Use hybrid OCR pipeline (RAM/SSD) to reduce disk wear. Default: true.")]
+        [DefaultValue(true)]
+        public bool UseHybridOcr { get; set; } = true;
+
+        [Category("4. OCR")]
+        [Description("CPU threshold (%) to switch to disk-based buffering. Default: 40.")]
+        [DefaultValue(40)]
+        public int HighLoadCpuThreshold { get; set; } = 40;
 
         [Category("1. Database Performance")]
         [Description("Synchronization mode. NORMAL is safe, OFF is faster but risky. Default: NORMAL.")]
@@ -116,11 +150,6 @@ namespace Recap
         public string UserAgent { get; set; } = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
         [Category("4. Features")]
-        [Description("Enable saving text coordinates for highlighting. Default: true.")]
-        [DefaultValue(true)]
-        public bool EnableTextCoordinates { get; set; } = true;
-
-        [Category("4. Features")]
         [Description("Enable full-text search indexing. Default: true.")]
         [DefaultValue(true)]
         public bool EnableTextSearch { get; set; } = true;
@@ -129,5 +158,10 @@ namespace Recap
         [Description("Enable debug logging to file. Requires restart to take full effect.")]
         [DefaultValue(false)]
         public bool EnableDebugLogging { get; set; } = false;
+
+        [Category("5. Debug & Logging")]
+        [Description("Show which capture method is being used (WGC or GDI+).")]
+        [DefaultValue(false)]
+        public bool ShowCaptureMethod { get; set; } = false;
     }
 }

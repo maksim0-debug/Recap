@@ -27,6 +27,7 @@ namespace Recap
         private readonly string _tempOcrPath;
         private readonly OcrService _ocrService;
         private readonly IconManager _iconManager;
+        private SystemLoadMonitor _systemLoadMonitor;
 
         public CaptureController(ScreenshotService screenshotService, FrameRepository frameRepository, AppSettings settings, OcrDatabase ocrDb, OcrService ocrService = null, IconManager iconManager = null)
         {
@@ -36,6 +37,7 @@ namespace Recap
             _ocrDb = ocrDb;
             _ocrService = ocrService;
             _iconManager = iconManager;
+            _systemLoadMonitor = new SystemLoadMonitor();
 
             _screenshotService.Settings = _settings;
 
@@ -93,14 +95,11 @@ namespace Recap
                 _lastCaptureDate = now;
             }
 
-            string tempGuid = Guid.NewGuid().ToString();
-            string tempFile = null;
-            if (!string.IsNullOrEmpty(_tempOcrPath))
-            {
-                tempFile = System.IO.Path.Combine(_tempOcrPath, tempGuid + ".jpg");
-            }
+            bool useHybrid = AdvancedSettings.Instance.UseHybridOcr;
+            bool isHighLoad = _systemLoadMonitor.IsHighLoad();
+            bool saveToDisk = !useHybrid || isHighLoad;
 
-            var result = await _screenshotService.TakeScreenshotAsync(_lastScreenshotHash, tempFile);
+            var result = await _screenshotService.TakeScreenshotAsync(_lastScreenshotHash, null, false);
 
             if (result.JpegBytes != null)
             {
@@ -151,30 +150,38 @@ namespace Recap
                 {
                     _iconManager?.TryFetchIconFromHwnd(realHwnd, finalAppName);
 
-                    if (!string.IsNullOrEmpty(tempFile) && System.IO.File.Exists(tempFile))
+                    if (_ocrService != null)
                     {
-                        try
+                        try 
                         {
-                            string finalPath = System.IO.Path.Combine(_tempOcrPath, newFrame.Value.TimestampTicks + ".jpg");
-                            System.IO.File.Move(tempFile, finalPath);
-                            _ocrDb?.AddFrame(newFrame.Value.TimestampTicks, finalAppName);
-                            _ocrService?.SignalNewWork();
+                            System.Drawing.Bitmap original = _screenshotService.GetLastCapturedBitmap();
+                            if (original != null)
+                            {
+                                System.Drawing.Bitmap snapshot = (System.Drawing.Bitmap)original.Clone();
+
+                                if (saveToDisk && !string.IsNullOrEmpty(_tempOcrPath))
+                                {
+                                    string finalPath = System.IO.Path.Combine(_tempOcrPath, newFrame.Value.TimestampTicks + ".jpg");
+                                    snapshot.Save(finalPath, System.Drawing.Imaging.ImageFormat.Jpeg);
+                                    snapshot.Dispose();
+                                    
+                                    _ocrDb?.AddFrame(newFrame.Value.TimestampTicks, finalAppName);
+                                    _ocrService.SignalNewWork();
+                                }
+                                else
+                                {
+                                    _ocrDb?.AddFrame(newFrame.Value.TimestampTicks, finalAppName);
+                                    _ocrService.EnqueueImage(snapshot, newFrame.Value.TimestampTicks);
+                                }
+                            }
                         }
                         catch (Exception ex)
                         {
-                            DebugLogger.LogError("CaptureController.OcrRename", ex);
-                            try { System.IO.File.Delete(tempFile); } catch { }
+                            DebugLogger.LogError("CaptureController.SnapshotWithClone", ex);
                         }
                     }
 
                     FrameCaptured?.Invoke(newFrame.Value);
-                }
-                else
-                {
-                    if (!string.IsNullOrEmpty(tempFile) && System.IO.File.Exists(tempFile))
-                    {
-                        try { System.IO.File.Delete(tempFile); } catch { }
-                    }
                 }
             }
 
@@ -186,6 +193,7 @@ namespace Recap
 
         public void Dispose()
         {
+            _systemLoadMonitor?.Dispose();
             _browserTracker?.Dispose();
             _screenshotTimer?.Stop();
             _screenshotTimer?.Dispose();

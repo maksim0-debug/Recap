@@ -30,6 +30,8 @@
 
         public bool SuppressExtensionWarning { get; set; }
 
+        public bool UseWindowsGraphicsCapture { get; set; } = true;
+
         public AppSettings Clone()
         {
             return (AppSettings)this.MemberwiseClone();

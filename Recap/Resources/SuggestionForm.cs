@@ -19,7 +19,6 @@ namespace Recap
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false;
             this.StartPosition = FormStartPosition.Manual;
-            this.TopMost = true;    
             this.BackColor = Color.White;
             this.Padding = new Padding(1);   
 

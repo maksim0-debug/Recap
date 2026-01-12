@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using LibVLCSharp.Shared;
@@ -31,6 +32,8 @@ namespace Recap
         private NotifyIcon notifyIcon;
         private TabControl mainTabControl;
         private ActivityHeatmap activityHeatmap;
+
+        private CancellationTokenSource _searchCts;
 
         private readonly SettingsManager _settingsManager;
         private FrameRepository _frameRepository;
@@ -175,6 +178,15 @@ namespace Recap
         private void HandleFrameCaptureUI(FrameIndex newFrame)
         {
             _historyViewController.HandleNewFrame(newFrame);
+
+            if (AdvancedSettings.Instance.ShowCaptureMethod && _screenshotService != null)
+            {
+                string method = _screenshotService.LastUsedCaptureMethod;
+                if (!string.IsNullOrEmpty(method) && method != "None")
+                {
+                    lblStatus.Text = $"Capture: {method}";
+                }
+            }
         }
 
         public void UpdateLocalization()
@@ -377,7 +389,7 @@ namespace Recap
                 Task.Delay(200).ContinueWith(t => { if (this.IsHandleCreated) this.Invoke((Action)(() => { if (_suggestionForm != null && !_suggestionForm.HasFocus()) _suggestionForm.Hide(); })); });
             };
 
-            _suggestionForm = new SuggestionForm(txtOcrSearch);
+            _suggestionForm = new SuggestionForm(txtOcrSearch) { Owner = this };
             _suggestionForm.SuggestionSelected += (s, term) => {
                 txtOcrSearch.Text = term;
                 txtOcrSearch.SelectionStart = term.Length;
@@ -989,42 +1001,62 @@ namespace Recap
             }
         }
 
-        private void TxtOcrSearch_TextChanged(object sender, EventArgs e)
+        private async void TxtOcrSearch_TextChanged(object sender, EventArgs e)
         {
+            _searchCts?.Cancel();
+            _searchCts = new CancellationTokenSource();
+            var token = _searchCts.Token;
+
             string text = txtOcrSearch.Text;
-            if (text.Length >= 2)
+
+            try
             {
-                long? start = null;
-                long? end = null;
-
-                if (!chkGlobalSearch.Checked)
+                if (text.Length >= 2)
                 {
-                    var date = datePicker.Value.Date;
-                    start = date.Ticks;
-                    end = date.AddDays(1).Ticks - 1;
-                }
+                    await Task.Delay(400, token);
+                    if (token.IsCancellationRequested) return;
 
-                Task.Run(() =>
-                {
-                    var suggestions = _ocrDb.GetSearchSuggestions(text, 10, start, end);
-                    this.Invoke((Action)(() =>
+                    long? start = null;
+                    long? end = null;
+
+                    if (!chkGlobalSearch.Checked)
                     {
-                        if (!txtOcrSearch.Text.StartsWith(text.Substring(0, 2))) return;
+                        var date = datePicker.Value.Date;
+                        start = date.Ticks;
+                        end = date.AddDays(1).Ticks - 1;
+                    }
 
-                        if (suggestions.Count > 0)
-                        {
-                            _suggestionForm.SetSuggestions(suggestions);
-                        }
-                        else
-                        {
-                            _suggestionForm.Hide();
-                        }
-                    }));
-                });
+                    var suggestions = await Task.Run(() => 
+                    {
+                        if (token.IsCancellationRequested) return new List<(string, int)>();
+                        return _ocrDb.GetSearchSuggestions(text, 10, start, end);
+                    }, token);
+
+                    if (token.IsCancellationRequested) return;
+
+                    if (suggestions.Count > 0)
+                    {
+                        _suggestionForm.SetSuggestions(suggestions);
+                    }
+                    else
+                    {
+                        _suggestionForm.Hide();
+                    }
+
+                    _historyViewController?.ApplyFilter();
+                }
+                else
+                {
+                    _suggestionForm.Hide();
+                     if (text.Length == 0) _historyViewController?.ApplyFilter();
+                }
             }
-            else
+            catch (OperationCanceledException)
             {
-                _suggestionForm.Hide();
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.LogError("TxtOcrSearch_TextChanged", ex);
             }
         }
 

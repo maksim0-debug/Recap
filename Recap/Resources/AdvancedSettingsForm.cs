@@ -1,6 +1,7 @@
 using System;
 using System.Data;
 using System.Drawing;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace Recap
@@ -14,6 +15,7 @@ namespace Recap
         private PropertyGrid _propertyGrid;
         private Button _btnSave;
         private Button _btnCancel;
+        private Button _btnRebuildIndex;
 
         private TextBox _txtSql;
         private Button _btnExecuteSql;
@@ -66,27 +68,36 @@ namespace Recap
             _propertyGrid.ToolbarVisible = false;
             _propertyGrid.PropertySort = PropertySort.Categorized;
 
-            var panelButtons = new Panel();
+            var panelButtons = new FlowLayoutPanel();
             panelButtons.Dock = DockStyle.Bottom;
             panelButtons.Height = 50;
+            panelButtons.Padding = new Padding(10);
+            panelButtons.FlowDirection = FlowDirection.RightToLeft;
 
             _btnSave = new Button();
             _btnSave.Text = "Save && Restart";
-            _btnSave.DialogResult = DialogResult.OK;
-            _btnSave.Location = new System.Drawing.Point(620, 10);
             _btnSave.Size = new System.Drawing.Size(150, 30);
-            _btnSave.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
             _btnSave.Click += (s, e) => SaveSettings();
 
             _btnCancel = new Button();
             _btnCancel.Text = "Cancel";
             _btnCancel.DialogResult = DialogResult.Cancel;
-            _btnCancel.Location = new System.Drawing.Point(510, 10);
             _btnCancel.Size = new System.Drawing.Size(100, 30);
-            _btnCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
 
-            panelButtons.Controls.Add(_btnSave);
+            _btnRebuildIndex = new Button();
+            _btnRebuildIndex.Text = "Rebuild Index";
+            _btnRebuildIndex.Size = new System.Drawing.Size(120, 30);
+            _btnRebuildIndex.Click += OnRebuildIndexClick;
+            
+            var btnRepairTimeline = new Button();
+            btnRepairTimeline.Text = "Repair Timeline";
+            btnRepairTimeline.Size = new System.Drawing.Size(120, 30);
+            btnRepairTimeline.Click += OnRepairTimelineClick;
+
             panelButtons.Controls.Add(_btnCancel);
+            panelButtons.Controls.Add(_btnSave);
+            panelButtons.Controls.Add(_btnRebuildIndex);
+            panelButtons.Controls.Add(btnRepairTimeline);
 
             _tabSettings.Controls.Add(_propertyGrid);
             _tabSettings.Controls.Add(panelButtons);
@@ -150,6 +161,107 @@ namespace Recap
             this.Controls.Add(_tabControl);
         }
 
+        private void OnRebuildIndexClick(object sender, EventArgs e)
+        {
+            if (MessageBox.Show("This will rebuild the search index. It may take a while. Continue?", "Rebuild Index", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+            {
+                _btnRebuildIndex.Enabled = false;
+                var progress = new Progress<int>(count => 
+                {
+                    if (!_btnRebuildIndex.IsDisposed)
+                        _btnRebuildIndex.Text = $"Processed {count}...";
+                });
+                
+                Task.Run(() => 
+                {
+                    try 
+                    {
+                        if (_ocrDb == null) 
+                        {
+                            var settings = new SettingsManager().Load();
+                            _ocrDb = new OcrDatabase(settings.StoragePath);
+                        }
+                        
+                        _ocrDb.RebuildSearchIndex(progress);
+                        
+                        this.Invoke((Action)(() => 
+                        {
+                            MessageBox.Show("Index rebuild complete!", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        }));
+                    } 
+                    catch (Exception ex) 
+                    {
+                        this.Invoke((Action)(() => 
+                        {
+                            MessageBox.Show("Error: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }));
+                    } 
+                    finally 
+                    {
+                        if (!this.IsDisposed && !this.Disposing)
+                        {
+                            this.Invoke((Action)(() => 
+                            {
+                                _btnRebuildIndex.Text = "Rebuild Index";
+                                _btnRebuildIndex.Enabled = true;
+                            }));
+                        }
+                    }
+                });
+            }
+        }
+
+        private void OnRepairTimelineClick(object sender, EventArgs e)
+        {
+            using (var ofd = new OpenFileDialog())
+            {
+                ofd.Filter = "Recap Timeline Files (*.sch)|*.sch";
+                ofd.Title = "Select Timeline File to Repair";
+                if (ofd.ShowDialog() == DialogResult.OK)
+                {
+                    var btn = (Button)sender;
+                    btn.Enabled = false;
+                    string oldText = btn.Text;
+                    
+                    var progress = new Progress<string>(status => 
+                    {
+                        if (!btn.IsDisposed) btn.Text = status;
+                    });
+
+                    Task.Run(() => 
+                    {
+                        try 
+                        {
+                            var settings = new SettingsManager().Load();
+                            if (_ocrDb == null) _ocrDb = new OcrDatabase(settings.StoragePath);
+                            
+                            var repo = new FrameRepository(settings.StoragePath, _ocrDb);
+                            int count = repo.RepairDayFromBinaryFile(ofd.FileName, progress);
+                            
+                            this.Invoke((Action)(() => 
+                            { 
+                                MessageBox.Show(
+                                    $"Recovery complete.\nNew frames available: {count}.\nStats reset.", 
+                                    "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            }));
+                        } 
+                        catch (Exception ex)
+                        {
+                            this.Invoke((Action)(() => MessageBox.Show("Error: " + ex.Message)));
+                        }
+                        finally
+                        {
+                            this.Invoke((Action)(() => 
+                            { 
+                                btn.Text = oldText;
+                                btn.Enabled = true;
+                            }));
+                        }
+                    });
+                }
+            }
+        }
+
         private void LoadSettings()
         {
             _propertyGrid.SelectedObject = AdvancedSettings.Instance;
@@ -157,9 +269,20 @@ namespace Recap
 
         private void SaveSettings()
         {
-            AdvancedSettings.Instance.Save();
-            MessageBox.Show("Settings saved. Some changes may require a restart.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
-            this.Close();
+            try
+            {
+                _propertyGrid.Focus();
+                this.ActiveControl = _btnSave;
+                
+                AdvancedSettings.Instance.Save();
+                MessageBox.Show("Settings saved. Some changes may require a restart.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                this.DialogResult = DialogResult.OK;
+                this.Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to save settings: {ex.Message}", "Save Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         private void ExecuteSql()
