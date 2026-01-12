@@ -1,60 +1,86 @@
-# Recap — Activity Tracker & Screen Recorder for Windows
+<div align="center">
+  <a href="README.md"><img src="https://img.shields.io/badge/lang-English-blue.svg" alt="English"></a>
+  <a href="README.ru.md"><img src="https://img.shields.io/badge/lang-Русский-green.svg" alt="Russian"></a>
+  <a href="README.uk.md"><img src="https://img.shields.io/badge/lang-Українська-yellow.svg" alt="Ukrainian"></a>
+  <a href="README.zh-CN.md"><img src="https://img.shields.io/badge/lang-简体中文-red.svg" alt="Chinese"></a>
+</div>
 
-Recap is a local, privacy-focused activity tracker. It records your screen, performs Optical Character Recognition (OCR), tracks website usage, and visualizes your productivity. All data remains 100% local.
+<br/>
+
+# 📼 Recap — An Open-Source Alternative to "Windows Recall"
+
+> **Your personal time machine. Local. Private. Free.**
+
+Recap is a privacy-focused activity tracker and screen recorder for Windows. It captures your workflow, extracts text (OCR) from everything you see, and allows you to instantly search through your visual history. 
+
+**Unlike Windows Recall, Recap runs on any PC, requires no NPU, and guarantees that your data NEVER leaves your hard drive.**
+
+---
+
+## ⚡ Why choose Recap?
+
+*   🔒 **100% Privacy:** No cloud uploads. No telemetry. Your screenshots stay on your drive.
+*   🧠 **Search Your Memory:** Forgot a password, a code snippet, or a chat message? Type a keyword, and Recap finds the exact moment.
+*   🎮 **Gaming Friendly:** Optimized for minimal CPU impact while gaming.
+*   📝 **Annotate Your Day:** Built-in note-taking system tied to specific timestamps.
+
+---
 
 ## ✨ Key Features
-<img width="886" height="693" alt="image" src="https://github.com/user-attachments/assets/0e6f7aa1-ad8f-48a1-a0d5-f6cddca73865" />
+
+### 🔍 Search Everything (Global Search & OCR)
+*   **Visual Search:** Every frame is scanned for text. Search for "invoice", "meeting", or specific code syntax.
+*   **Instant Results:** Query gigabytes of history in milliseconds thanks to optimized SQLite indexing.
+*   **Text Highlighting:** Recap highlights the exact location of the searched text on the screenshot.
+  <img width="886" height="658" alt="image" src="https://github.com/user-attachments/assets/7e8626d8-8887-46a8-90db-023bfe1e08b5" />
+
+
+### 🏷️ Notes & Bookmarks
+*   **Quick Notes:** Press `B` to instantly mark an important moment (e.g., "Bug found", "Deep work started").
+*   **Navigation:** Press `Ctrl+B` to browse the notes panel and jump to specific timestamps.
+
+### 🧠 Intelligent Context-Aware Recording
+*   **Motion Detection:** Screenshots are only taken when screen content changes, saving massive amounts of disk space.
+*   **Customizable Quality:** Adjustable frame rates and JPEG compression levels.
+
+### 🌐 Browser Integration
+*   Works with an optional extension to log visited URLs and YouTube video titles.
+*   *Example:* Search for "youtube.com" or a specific video title to filter your timeline.
+
+### 📊 Analytics & Heatmaps
+*   **Activity Heatmap:** Visualize your most productive days and hours.
+   <img width="868" height="439" alt="image" src="https://github.com/user-attachments/assets/b8530f5a-cfa3-4d40-ac5a-8162e7f8adf6" />
 
 
 
+*   **App Usage Charts:** See exactly how much time you spent in VS Code, Telegram, or other apps.
+   <img width="851" height="420" alt="image" src="https://github.com/user-attachments/assets/17583931-368d-455f-a297-5f25234e2e38" />
 
-### 🧠 Smart Recording
-* **Context-Aware:** Recap captures screenshots only when the content on your screen changes.
-* **Quality Settings:** Adjust frames per second (FPS) and JPEG quality/compression to find the perfect balance between visual clarity and disk space usage.
+*   **App Aliases:** Rename applications in reports for better organization.
 
-### 🔍 Global Search & OCR
-* **Instant Recall:** Find any moment from your past instantly.
-* **OCR Scanning:** Every frame is scanned for text. Search for "invoice," "chat with Alex," or any code snippet you saw days ago.
-* **High-Speed Search:** Query your entire history database in milliseconds.
+---
 
-### 🎯 App Filtering & Navigation
-* **App Filter:** Isolate history to view usage for specific programs (e.g., only VS Code).
-* **Timeline:** Scroll through your day as easily as using a video player.
-* **Activity Heatmap:** Visualize your most productive days and hours at a glance.
+## 📦 Recap Converter (Archiving Tool)
+*Includes a built-in utility for long-term storage:*
 
-## 🌐 Browser Tracking
-Works in tandem with a companion browser extension to log visited URLs and YouTube video titles. This enables you to search your history by specific web pages.
+*   **Export to Video:** Converts internal `.sch` data files into standard **.MKV** video files (viewable within the app).
+*   **Smart Compression:** Uses FFmpeg (supports NVIDIA NVENC and CPU encoding) to compress days of data into tiny video files.
 
-<img width="162" height="313" alt="image" src="https://github.com/user-attachments/assets/345630b8-e77c-49c7-ab73-c774e10e87e9" />
-
-
-
-## 📦 Recap Converter
-Includes a built-in utility for efficient storage management:
-* **Video Conversion:** Converts internal `.sch` data files into standard MKV video format.
-* **Compression:** Leverages FFmpeg (supporting both NVIDIA NVENC and CPU encoding) to significantly reduce file sizes for long-term archiving.
-
-## 🛠 Tech Stack
-* **Platform:** .NET Framework 4.8
-* **UI:** Windows Forms (WinForms)
-* **Database:** SQLite (high-performance indexing for OCR data)
-* **Video Engine:** LibVLCSharp
-* **OCR Engine:** Windows Media OCR API
-
-## 🚀 Installation & Setup
+## 🚀 Installation
 
 ### 1. Main Application
-1. Navigate to the **Releases** page.
-2. Download the latest `Recap.zip`.
-3. Extract the archive.
-4. Run `Recap.exe`.
+1. Go to the [**Releases Page**](https://github.com/maksim0-debug/Recap/releases).
+2. Download `Recap.zip`.
+3. Extract and run `Recap.exe`. *(No installation required)*.
 
-### 2. Browser Extension (Required for URL tracking)
-Recap requires a helper extension to accurately read tab titles and URLs.
-1. Open your browser (Chrome/Edge/Brave) and go to `chrome://extensions`.
-2. Enable **Developer mode** (toggle in the top right corner).
+### 2. Browser Extension (Recommended)
+To track URLs and tab titles:
+1. Open Chrome/Edge/Brave and go to `chrome://extensions`.
+2. Enable **Developer mode** (top right).
 3. Click **Load unpacked**.
 4. Select the `browser-extension` folder located inside your Recap folder (or this repository).
+
+---
 
 ## ⚖️ License
 Distributed under the MIT License. See `LICENSE` for more information.
