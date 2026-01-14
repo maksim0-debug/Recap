@@ -105,6 +105,37 @@ namespace Recap
             }
         }
 
+        public void DeleteDayMeta(string dayStr)
+        {
+            ExecuteWithRetry(connection =>
+            {
+                using (var transaction = connection.BeginTransaction())
+                {
+                    try
+                    {
+                        using (var cmd = new SqliteCommand("DELETE FROM FramesMeta WHERE DayStr = @day", connection, transaction))
+                        {
+                            cmd.Parameters.AddWithValue("@day", dayStr);
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        using (var cmd = new SqliteCommand("DELETE FROM IndexedDays WHERE DayStr = @day", connection, transaction))
+                        {
+                            cmd.Parameters.AddWithValue("@day", dayStr);
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        transaction.Commit();
+                    }
+                    catch (Exception)
+                    {
+                        transaction.Rollback();
+                        throw;
+                    }
+                }
+            });
+        }
+
         public void Vacuum()
         {
             ExecuteWithRetry(connection =>
@@ -1216,6 +1247,18 @@ namespace Recap
             return ExecuteScalarWithRetry(connection =>
             {
                 using (var cmd = new SqliteCommand("SELECT 1 FROM IndexedDays WHERE DayStr = @day", connection))
+                {
+                    cmd.Parameters.AddWithValue("@day", dayStr);
+                    return cmd.ExecuteScalar() != null;
+                }
+            });
+        }
+
+        public bool HasVideoFrames(string dayStr)
+        {
+            return ExecuteScalarWithRetry(connection =>
+            {
+                using (var cmd = new SqliteCommand("SELECT 1 FROM FramesMeta WHERE DayStr = @day AND DataLength = -1 LIMIT 1", connection))
                 {
                     cmd.Parameters.AddWithValue("@day", dayStr);
                     return cmd.ExecuteScalar() != null;

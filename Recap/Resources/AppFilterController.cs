@@ -50,9 +50,10 @@ namespace Recap
             "msedge.exe", "edge.exe",
             "opera.exe", "opera gx.exe",
             "brave.exe",
-            "yandex.exe", "browser.exe",
+            "browser.exe",
             "firefox.exe",
-            "telegram.exe", "ayugram.exe", "kotatogram.exe", "64gram.exe"
+            "telegram.exe", "ayugram.exe", "kotatogram.exe", "64gram.exe",
+            "code.exe", "devenv.exe"
         };
 
         private readonly HashSet<string> _messengers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -436,6 +437,20 @@ namespace Recap
                 {
                     info.IsVideo = true;
                     info.VideoId = info.DetailKey;
+                }
+
+                if (info.EffectiveExe.IndexOf("devenv", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                     if (!string.IsNullOrEmpty(info.DetailKey)) 
+                     {
+                         info.DetailKey = info.DetailKey.TrimEnd('*');
+                         info.DetailKey = System.Text.RegularExpressions.Regex.Replace(info.DetailKey, @"\s\([^\)]+\)$", "");
+                     }
+                     if (!string.IsNullOrEmpty(info.GroupKey)) 
+                     {
+                         info.GroupKey = info.GroupKey.TrimEnd('*');
+                         info.GroupKey = System.Text.RegularExpressions.Regex.Replace(info.GroupKey, @"\s\([^\)]+\)$", "");
+                     }
                 }
             }
             return info;

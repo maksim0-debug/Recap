@@ -153,6 +153,7 @@ namespace Recap
             if (string.IsNullOrEmpty(rawName)) return "";
 
             var parts = rawName.Split('|');
+            string displayName = "";
 
             if (parts.Length >= 3 && parts[1].Equals("YouTube", StringComparison.OrdinalIgnoreCase))
             {
@@ -162,15 +163,41 @@ namespace Recap
                 {
                     title = title.Substring(0, vIndex);
                 }
-                return title;
+                displayName = title;
             }
-
-            if (parts.Length >= 2)
+            else if (parts.Length >= 2)
             {
-                return parts[parts.Length - 1];
+                displayName = parts[parts.Length - 1];
+            }
+            else
+            {
+                displayName = parts[0].Replace(".exe", "");
             }
 
-            return parts[0].Replace(".exe", "");
+            string[] suffixesToRemove = new[] 
+            { 
+                " - Visual Studio Code", 
+                " - Microsoft Visual Studio", 
+                " - Visual Studio", 
+                " - Kick", 
+                " | Kick",
+                " - Google AI Studio",
+                "● "
+            };
+
+            foreach (var s in suffixesToRemove)
+            {
+                if (displayName.EndsWith(s, StringComparison.OrdinalIgnoreCase))
+                {
+                    displayName = displayName.Substring(0, displayName.Length - s.Length);
+                }
+                else if (s == "● " && displayName.StartsWith(s))      
+                {
+                     displayName = displayName.Substring(s.Length);
+                }
+            }
+
+            return displayName.Trim();
         }
 
         private Point CalculatePopupPosition(Control trackBar, int mouseX)

@@ -49,36 +49,36 @@ namespace RecapConverter
             {
                 while (stream.Position < stream.Length)
                 {
-                    long startPos = stream.Position;
-                    if (stream.Length - startPos < 12) break;
-
-                    long ticks = reader.ReadInt64();
-                    int firstInt = reader.ReadInt32();
-                    string appName = "Unknown";
-                    int dataLength = 0;
-
-                    if (firstInt > 0 && firstInt < 256)    
+                    try
                     {
-                        appName = Encoding.UTF8.GetString(reader.ReadBytes(firstInt));
-                        dataLength = reader.ReadInt32();
+                        if (stream.Position + 12 > stream.Length) break;
+
+                        long ticks = reader.ReadInt64();
+                        int nameLen = reader.ReadInt32();
+
+                        if (nameLen < 0 || nameLen > 10000) break;
+
+                        byte[] nameBytes = reader.ReadBytes(nameLen);
+                        string appName = Encoding.UTF8.GetString(nameBytes);
+
+                        int dataLength = reader.ReadInt32();
+
+                        if (dataLength < 0 || stream.Position + dataLength > stream.Length) break;
+
+                        frames.Add(new FrameIndex
+                        {
+                            TimestampTicks = ticks,
+                            DataOffset = stream.Position,
+                            DataLength = dataLength,
+                            AppName = appName
+                        });
+
+                        stream.Seek(dataLength, SeekOrigin.Current);
                     }
-                    else
+                    catch
                     {
-                        appName = "Legacy";
-                        dataLength = firstInt;
+                        break;
                     }
-
-                    if (dataLength <= 0 || stream.Position + dataLength > stream.Length) break;
-
-                    frames.Add(new FrameIndex
-                    {
-                        TimestampTicks = ticks,
-                        DataOffset = stream.Position,
-                        DataLength = dataLength,
-                        AppName = appName
-                    });
-
-                    stream.Position += dataLength;
                 }
             }
             return frames;

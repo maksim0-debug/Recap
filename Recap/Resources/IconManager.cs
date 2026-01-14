@@ -69,15 +69,20 @@ namespace Recap
             string exeName = parts[0];
             string lowerExe = exeName.ToLower();
 
-            bool isMessenger = lowerExe.Contains("telegram") ||
-                               lowerExe.Contains("ayugram") ||
-                               lowerExe.Contains("kotatogram");
-
-            string cacheKey;
+            string cacheKey; 
             IconType type = IconType.Exe;
-            string payload = exeName;         
+            string payload = exeName;
 
-            if (isMessenger)
+            if (lowerExe.Contains("code.exe") || lowerExe.Contains("devenv.exe") || 
+                lowerExe.Contains("code") || lowerExe.Contains("visualstudio")) 
+            {
+                cacheKey = "exe_" + MakeSafeFilename(exeName).ToLower();
+                type = IconType.Exe;
+                payload = exeName;
+            }
+            else if (lowerExe.Contains("telegram") ||
+                               lowerExe.Contains("ayugram") ||
+                               lowerExe.Contains("kotatogram"))
             {
                 cacheKey = "exe_" + MakeSafeFilename(exeName).ToLower();
                 type = IconType.Exe;

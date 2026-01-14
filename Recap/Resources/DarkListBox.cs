@@ -176,7 +176,7 @@ namespace Recap
 
             int iconW, iconH;
 
-            if (item.IsVideo || item.Level == 2)
+            if (item.IsVideo)
             {
                 iconW = 26;
                 iconH = 19;

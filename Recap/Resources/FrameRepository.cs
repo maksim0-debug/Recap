@@ -613,13 +613,18 @@ namespace Recap
 
         #region Fast DB-backed Frame Access
 
-        public async Task SyncDayToDbAsync(DateTime date)
+        public async Task SyncDayToDbAsync(DateTime date, bool force = false)
         {
             if (_ocrDb == null) return;
 
             string dayStr = date.ToString("yyyy-MM-dd");
             
-            if (_ocrDb.IsDayIndexed(dayStr)) return;
+            if (!force && _ocrDb.IsDayIndexed(dayStr)) return;
+
+            if (force)
+            {
+                await Task.Run(() => _ocrDb.DeleteDayMeta(dayStr));
+            }
 
             var frames = await Task.Run(() => LoadFramesForDate(date));
             
@@ -689,8 +694,21 @@ namespace Recap
             }
 
             string dayStr = date.ToString("yyyy-MM-dd");
+            string csvPath = GetCsvPath(date);
             
-            if (_ocrDb.IsDayIndexed(dayStr))
+            bool hasCsv = File.Exists(csvPath);
+            bool dbIndexed = _ocrDb.IsDayIndexed(dayStr);
+            bool forceReload = false;
+
+            if (hasCsv && dbIndexed)
+            {
+                if (!_ocrDb.HasVideoFrames(dayStr))
+                {
+                    forceReload = true;
+                }
+            }
+
+            if (!forceReload && dbIndexed)
             {
                 var frames = _ocrDb.GetMiniFramesForDay(dayStr);
                 EstimateIntervalsForMiniFrames(frames);
@@ -698,7 +716,7 @@ namespace Recap
             }
             
             var diskFrames = LoadFramesForDate(date);
-            Task.Run(() => SyncDayToDbAsync(date));
+            Task.Run(() => SyncDayToDbAsync(date, force: forceReload));
             
             var appMap = _ocrDb.GetAppMap();
             var nameToId = appMap.ToDictionary(x => x.Value, x => x.Key);

@@ -115,13 +115,89 @@ namespace Recap
                 if (procLower.Contains("chrome") ||
                     procLower.Contains("msedge") ||
                     procLower.Contains("brave") ||
-                    procLower.Contains("opera") ||
-                    procLower.Contains("yandex"))
+                    procLower.Contains("opera"))
                 {
                     string domain = _browserTracker.CurrentDomain;
                     if (!string.IsNullOrEmpty(domain))
                     {
-                        finalAppName = $"{processName}|{domain}";
+                        string title = ActiveWindowHelper.GetWindowTitleFromHwnd(hWnd);
+                        title = CleanupBrowserSuffixes(title);
+
+                        if (domain.Contains("kick.com"))
+                        {
+                            string clean = CleanupTitle(title, new[] { " - Kick", " | Kick" });
+                            if (!string.IsNullOrEmpty(clean))
+                            {
+                                finalAppName = $"{processName}|kick.com|{clean}";
+                            }
+                            else
+                            {
+                                finalAppName = $"{processName}|kick.com|Stream"; 
+                            }
+                        }
+                        else if (domain.Contains("aistudio.google.com"))
+                        {
+                            string clean = CleanupTitle(title, new[] { " - Google AI Studio", " | Google AI Studio" });
+                            if (!string.IsNullOrEmpty(clean))
+                            {
+                                finalAppName = $"{processName}|aistudio.google.com|{clean}";
+                            }
+                            else 
+                            {
+                                finalAppName = $"{processName}|aistudio.google.com|Prompt";
+                            }
+                        }
+                        else
+                        {
+                            finalAppName = $"{processName}|{domain}";
+                        }
+                    }
+                }
+                else if (procLower.Contains("code"))
+                {
+                    string title = ActiveWindowHelper.GetWindowTitleFromHwnd(hWnd);
+                    if (title.StartsWith("● ")) title = title.Substring(2);
+
+                    string project = CleanupTitle(title, new[] { " - Visual Studio Code" });
+                    
+                    if (!string.IsNullOrEmpty(project))
+                    {
+                        int lastDash = project.LastIndexOf(" - ");
+                        if (lastDash >= 0 && lastDash < project.Length - 3)
+                        {
+                            string projName = project.Substring(lastDash + 3);
+                            string fileName = project.Substring(0, lastDash);
+                            finalAppName = $"{processName}|{projName}|{fileName}";
+                        }
+                        else
+                        {
+                            finalAppName = $"{processName}|{project}";
+                        }
+                    }
+                }
+                else if (procLower.Contains("devenv"))
+                {
+                    string title = ActiveWindowHelper.GetWindowTitleFromHwnd(hWnd);
+                    string solution = CleanupTitle(title, new[] { " - Microsoft Visual Studio", " - Visual Studio" });
+                    
+                    if (!string.IsNullOrEmpty(solution))
+                    {
+                         int lastDash = solution.LastIndexOf(" - ");
+                        if (lastDash >= 0 && lastDash < solution.Length - 3)
+                        {
+                            string solName = solution.Substring(0, lastDash);
+                            string fileName = solution.Substring(lastDash + 3);
+                            
+                            fileName = fileName.TrimEnd('*');
+                            fileName = Regex.Replace(fileName, @"\s\([^\)]+\)$", "");
+                            finalAppName = $"{processName}|{solName}|{fileName}";
+                        }
+                        else
+                        {
+                            solution = solution.TrimEnd('*');
+                            solution = Regex.Replace(solution, @"\s\([^\)]+\)$", "");
+                            finalAppName = $"{processName}|{solution}";
+                        }
                     }
                 }
                 else if (procLower.Contains("telegram") || procLower.Contains("ayugram") || procLower.Contains("kotatogram"))
@@ -149,6 +225,15 @@ namespace Recap
                 if (newFrame.HasValue)
                 {
                     _iconManager?.TryFetchIconFromHwnd(realHwnd, finalAppName);
+
+                    if (finalAppName.Contains("|"))
+                    {
+                        var parts = finalAppName.Split('|');
+                        if (parts.Length > 0 && !string.IsNullOrEmpty(parts[0]))
+                        {
+                            _iconManager?.TryFetchIconFromHwnd(realHwnd, parts[0]);
+                        }
+                    }
 
                     if (_ocrService != null)
                     {
@@ -189,6 +274,41 @@ namespace Recap
             {
                 _screenshotTimer.Start();
             }
+        }
+
+        private string CleanupBrowserSuffixes(string title)
+        {
+            if (string.IsNullOrEmpty(title)) return "";
+            string[] browserSuffixes = new[] {
+                " - Google Chrome",
+                " - Microsoft Edge",
+                " - Opera",
+                " - Brave",
+                " - Mozilla Firefox"
+            };
+
+            foreach (var suffix in browserSuffixes)
+            {
+                if (title.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return title.Substring(0, title.Length - suffix.Length);
+                }
+            }
+            return title;
+        }
+
+        private string CleanupTitle(string title, string[] suffixesToRemove)
+        {
+            if (string.IsNullOrWhiteSpace(title)) return "";
+            string current = title;
+            foreach (var suffix in suffixesToRemove)
+            {
+                if (current.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    current = current.Substring(0, current.Length - suffix.Length);
+                }
+            }
+            return current.Trim();
         }
 
         public void Dispose()

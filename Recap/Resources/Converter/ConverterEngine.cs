@@ -7,6 +7,8 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Recap; 
+
 namespace RecapConverter
 {
     public class ConverterEngine
@@ -22,16 +24,16 @@ namespace RecapConverter
             string outputVideo = Path.Combine(Path.GetDirectoryName(schPath), $"{baseName}.mkv");
             string outputCsv = Path.Combine(Path.GetDirectoryName(schPath), $"{baseName}.csv");
 
-            LogMessage?.Invoke($"Обработка файла: {baseName}...");
+            LogMessage?.Invoke(Recap.Localization.Format("convLogProcessing", baseName));
 
             List<FrameIndex> frames = _reader.LoadIndices(schPath);
             if (frames == null || frames.Count == 0)
             {
-                LogMessage?.Invoke("Нет кадров для обработки.");
+                LogMessage?.Invoke(Recap.Localization.Get("convLogNoFrames"));
                 return;
             }
 
-            LogMessage?.Invoke($"Кадров: {frames.Count}. Запуск FFmpeg...");
+            LogMessage?.Invoke(Recap.Localization.Format("convLogStartFfmpeg", frames.Count));
 
             string inputArgs = $"-y -f rawvideo -pixel_format bgr24 -video_size {targetWidth}x{targetHeight} -framerate {fps} -i - ";
             string encoderArgs;
@@ -166,7 +168,7 @@ namespace RecapConverter
                         }
                         catch (Exception ex)
                         {
-                            LogMessage?.Invoke($"Ошибка записи: {ex.Message}");
+                            LogMessage?.Invoke(Recap.Localization.Format("convLogWriteErr", ex.Message));
                             i = frames.Count;
                             break;
                         }
@@ -175,7 +177,7 @@ namespace RecapConverter
                     if (i % 20 == 0)
                     {
                         int percent = (int)((double)i / frames.Count * 100);
-                        ProgressChanged?.Invoke(percent, $"Кадр {i}/{frames.Count} (Video: {videoFrameCounter})");
+                        ProgressChanged?.Invoke(percent, Recap.Localization.Format("convProgress", i, frames.Count, videoFrameCounter));
                     }
                 }
 
@@ -184,7 +186,7 @@ namespace RecapConverter
                 ffmpeg.WaitForExit();
             }
 
-            LogMessage?.Invoke($"Завершено: {Path.GetFileName(outputVideo)}");
+            LogMessage?.Invoke(Recap.Localization.Format("convLogFinished", Path.GetFileName(outputVideo)));
         }
 
         private byte[] GetRawBytes(Bitmap bmp)
