@@ -30,6 +30,9 @@ namespace Recap
         private readonly Image _errorIcon;
         private readonly Image _allAppsIcon;
         private readonly Image _youTubeIcon;
+        public Image QuestionIcon { get; private set; }
+        public Image InfoIcon { get; private set; }
+        public Image WarningIcon { get; private set; }
 
         private readonly object _lock = new object();
         private bool _isDisposed = false;
@@ -63,7 +66,28 @@ namespace Recap
             _errorIcon = CreateErrorIcon();     
             _allAppsIcon = CreateAllAppsIcon();
             _youTubeIcon = CreateYouTubeFolderIcon();
+
+            QuestionIcon = IconGenerator.GetMessageBoxIcon(MessageBoxIcon.Question, 32);
+            InfoIcon = IconGenerator.GetMessageBoxIcon(MessageBoxIcon.Information, 32);
+            WarningIcon = IconGenerator.GetMessageBoxIcon(MessageBoxIcon.Warning, 32);
         }
+
+        public Image GetMessageBoxIcon(MessageBoxIcon icon)
+        {
+            switch (icon)
+            {
+                case MessageBoxIcon.Question: return QuestionIcon;
+                case MessageBoxIcon.Information: return InfoIcon;
+                case MessageBoxIcon.Warning: return WarningIcon;
+                case MessageBoxIcon.Error: return _errorIcon;
+                default: return null;
+            }
+        }
+
+        public Image GetQuestionIcon() => QuestionIcon;
+        public Image GetInfoIcon() => InfoIcon;
+        public Image GetWarningIcon() => WarningIcon;
+        public Image GetErrorIcon() => _errorIcon;
 
         public Image GetIcon(string rawAppName)
         {

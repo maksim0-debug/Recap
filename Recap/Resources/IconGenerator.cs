@@ -3,6 +3,8 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
 namespace Recap
 {
     public static class IconGenerator
@@ -114,6 +116,61 @@ namespace Recap
             }
 
             return newIcon;
+        }
+
+        public static Bitmap GetMessageBoxIcon(MessageBoxIcon icon, int size = 48)
+        {
+            Bitmap bmp = new Bitmap(size, size);
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+
+                Color circleColor = Color.FromArgb(120, 120, 120);
+                string symbol = "?";
+
+                switch (icon)
+                {
+                    case MessageBoxIcon.Question:
+                        circleColor = Color.FromArgb(0, 120, 215);
+                        symbol = "?";
+                        break;
+                    case MessageBoxIcon.Information:
+                        circleColor = Color.FromArgb(0, 120, 215);
+                        symbol = "i";
+                        break;
+                    case MessageBoxIcon.Warning:
+                        circleColor = Color.FromArgb(255, 185, 0);
+                        symbol = "!";
+                        break;
+                    case MessageBoxIcon.Error:
+                        circleColor = Color.FromArgb(232, 17, 35);
+                        symbol = "×";
+                        break;
+                }
+
+                using (SolidBrush b = new SolidBrush(circleColor))
+                {
+                    g.FillEllipse(b, 2, 2, size - 4, size - 4);
+                }
+
+                using (SolidBrush b = new SolidBrush(Color.White))
+                {
+                    float fontSize = size * 0.6f;
+                    using (Font font = new Font("Segoe UI", fontSize, FontStyle.Bold))
+                    {
+                        var stringFormat = new StringFormat
+                        {
+                            Alignment = StringAlignment.Center,
+                            LineAlignment = StringAlignment.Center
+                        };
+                        g.DrawString(symbol, font, b, new RectangleF(0, 0, size, size), stringFormat);
+                    }
+                }
+            }
+            return bmp;
         }
     }
 }

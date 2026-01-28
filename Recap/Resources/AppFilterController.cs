@@ -8,6 +8,7 @@ namespace Recap
 {
     public class FilterItem
     {
+        public string RequestExpandKey;
         public string RawName;
         public List<string> RawNames = new List<string>();
         public string DisplayName;
@@ -606,6 +607,7 @@ namespace Recap
                             var memberItem = new FilterItem
                             {
                                 RawName = memberName,       
+                                RequestExpandKey = memberExpandKey,
                                 RawNames = new List<string> { memberName },
                                 DisplayName = memberName,
                                 DurationMs = memberNode.TotalMs,
@@ -703,7 +705,7 @@ namespace Recap
 
             if (item.HasChildren && e.X < clickArea)
             {
-                string key = item.Level == 0 ? item.DisplayName : item.RawName;
+                string key = item.RequestExpandKey ?? (item.Level == 0 ? item.DisplayName : item.RawName);
 
                 if (item.Level == 0)
                 {
@@ -712,7 +714,7 @@ namespace Recap
                     else
                         _expandedApps.Add(key);
                 }
-                else if (item.Level == 1)
+                else if (item.Level >= 1)
                 {
                     if (_expandedGroups.Contains(key))
                         _expandedGroups.Remove(key);
@@ -733,7 +735,7 @@ namespace Recap
 
             if (item.HasChildren)
             {
-                string key = item.Level == 0 ? item.DisplayName : item.RawName;
+                string key = item.RequestExpandKey ?? (item.Level == 0 ? item.DisplayName : item.RawName);
 
                 if (item.Level == 0)
                 {
@@ -742,7 +744,7 @@ namespace Recap
                     else
                         _expandedApps.Add(key);
                 }
-                else if (item.Level == 1)
+                else if (item.Level >= 1)
                 {
                     if (_expandedGroups.Contains(key))
                         _expandedGroups.Remove(key);
@@ -940,11 +942,13 @@ namespace Recap
 
                     if (alreadyExists)
                     {
-                        var dr = MessageBox.Show(
+                        var dr = ChoiceDialog.Show(
                             string.Format(Localization.Get("mergeAppsConfirm"), newName),
                             Localization.Get("windowTitle"),
-                            MessageBoxButtons.YesNoCancel,
-                            MessageBoxIcon.Question);
+                            Localization.Get("yes"),
+                            Localization.Get("no"),
+                            Localization.Get("cancel"),
+                            _iconManager.GetIcon(item.RawName));
 
                         if (dr == DialogResult.Cancel) return;
                         if (dr == DialogResult.No)

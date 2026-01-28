@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Recap Tracker",
   "version": "1.0",
-  "description": "Передает домен активной вкладки в приложение Recap",
+  "description": "Passes the domain of the active tab to the Recap application",
   "permissions": [
     "tabs"
   ],

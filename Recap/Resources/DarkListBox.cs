@@ -197,7 +197,13 @@ namespace Recap
 
             if (IconManager != null && !item.IsNote)
             {
-                Image icon = IconManager.GetIcon(item.RawName);
+                string iconKey = item.RawName;
+                if (!string.IsNullOrEmpty(iconKey) && !iconKey.StartsWith("$$COMPOSITE$$") && item.RawNames != null && item.RawNames.Count > 0)
+                {
+                    iconKey = item.RawNames[0];
+                }
+
+                Image icon = IconManager.GetIcon(iconKey);
                 if (icon != null)
                 {
                     try
