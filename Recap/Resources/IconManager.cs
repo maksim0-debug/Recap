@@ -4,17 +4,21 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using Recap.Utilities;
 
 namespace Recap
 {
     public class IconManager : IDisposable
     {
+        public OcrDatabase Database { get; set; }
+
         private readonly Dictionary<string, Image> _memoryCache = new Dictionary<string, Image>();
         private readonly HashSet<string> _currentlyLoading = new HashSet<string>();
         private readonly HashSet<string> _failedAttempts = new HashSet<string>();
@@ -30,7 +34,7 @@ namespace Recap
         private readonly object _lock = new object();
         private bool _isDisposed = false;
 
-        private enum IconType { Exe, Web, YouTubeThumb }
+        private enum IconType { Exe, Web, YouTubeThumb, Composite }
 
         public event Action<string> IconLoaded;
 
@@ -64,6 +68,11 @@ namespace Recap
         public Image GetIcon(string rawAppName)
         {
             if (rawAppName == Localization.Get("allApps")) return _allAppsIcon;
+
+            if (rawAppName.StartsWith("$$COMPOSITE$$"))
+            {
+                return GetCompositeIcon(rawAppName);
+            }
 
             var parts = rawAppName.Split('|');
             string exeName = parts[0];
@@ -179,6 +188,9 @@ namespace Recap
                         case IconType.Exe:
                             LoadExeIcon(payload, cacheKey, rawAppName);
                             break;
+                        case IconType.Composite:
+                            LoadCompositeIcon(payload, cacheKey, rawAppName);
+                            break;
                     }
                 }
                 catch
@@ -275,10 +287,15 @@ namespace Recap
                 }
                 else
                 {
-                    string exePath = FindExePath(exeName);
-                    if (!string.IsNullOrEmpty(exePath))
+                    if (Database != null && Database.CheckHasCustomIcon(originalName))
                     {
-                        using (var jumbo = IconExtractor.GetWin32JumboIcon(exePath))
+                    }
+                    else
+                    {
+                        string exePath = FindExePath(exeName);
+                        if (!string.IsNullOrEmpty(exePath))
+                        {
+                            using (var jumbo = IconExtractor.GetWin32JumboIcon(exePath))
                         {
                             if (jumbo != null)
                             {
@@ -307,9 +324,122 @@ namespace Recap
                     }
                 }
             }
+            }
             catch { }
 
             FinishLoading(cacheKey, loadedIcon, originalName);
+        }
+
+        public void SetCustomIcon(string appName, string imagePath)
+        {
+            try
+            {
+                using (var bitmap = IconHelper.ProcessUserImage(imagePath))
+                {
+                    string cacheKey = GetCacheKey(appName);
+                    string iconPath = Path.Combine(_iconCachePath, cacheKey + ".png");
+
+                    bitmap.Save(iconPath, System.Drawing.Imaging.ImageFormat.Png);
+
+                    lock (_lock)
+                    {
+                        if (_memoryCache.ContainsKey(cacheKey))
+                        {
+                            var old = _memoryCache[cacheKey];
+                            old?.Dispose();
+                        }
+                        _memoryCache[cacheKey] = new Bitmap(bitmap);
+                        _failedAttempts.Remove(cacheKey);
+                    }
+                }
+
+                Database?.SetHasCustomIcon(appName, true);
+
+                IconLoaded?.Invoke(appName);
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.LogError("SetCustomIcon", ex);
+            }
+        }
+
+        public void ResetCustomIcon(string appName)
+        {
+            try
+            {
+                string cacheKey = GetCacheKey(appName);
+                string iconPath = Path.Combine(_iconCachePath, cacheKey + ".png");
+
+                lock (_lock)
+                {
+                    if (_memoryCache.ContainsKey(cacheKey))
+                    {
+                        var old = _memoryCache[cacheKey];
+                        _memoryCache.Remove(cacheKey);
+
+                    }
+                }
+
+                if (File.Exists(iconPath))
+                {
+                    File.Delete(iconPath);
+                }
+
+                Database?.SetHasCustomIcon(appName, false);
+                
+                lock (_lock)
+                {
+                     _failedAttempts.Remove(cacheKey);
+                }
+
+                IconLoaded?.Invoke(appName);
+            }
+            catch (Exception ex)
+            {
+                DebugLogger.LogError("ResetCustomIcon", ex);
+            }
+        }
+
+        private string GetCacheKey(string rawAppName)
+        {
+             if (rawAppName == Localization.Get("allApps")) return "all_apps";      
+
+             var parts = rawAppName.Split('|');
+             string exeName = parts[0];
+             string lowerExe = exeName.ToLower();
+
+             if (lowerExe.Contains("code.exe") || lowerExe.Contains("devenv.exe") || 
+                 lowerExe.Contains("code") || lowerExe.Contains("visualstudio")) 
+             {
+                 return "exe_" + MakeSafeFilename(exeName).ToLower();
+             }
+             
+             if (lowerExe.Contains("telegram") || lowerExe.Contains("ayugram") || lowerExe.Contains("kotatogram"))
+             {
+                 return "exe_" + MakeSafeFilename(exeName).ToLower();
+             }
+
+             if (parts.Length >= 3 && parts[1].Equals("YouTube", StringComparison.OrdinalIgnoreCase))
+             {
+                 string detailName = parts[2];
+                 if (detailName.Equals("Home", StringComparison.OrdinalIgnoreCase)) return "yt_home";    
+                 string videoId = ExtractVideoId(detailName);
+                 if (!string.IsNullOrEmpty(videoId)) return "yt_" + videoId;
+                 return "web_" + MakeSafeFilename(detailName).GetHashCode();
+             }
+             
+             if (parts.Length >= 2)
+             {
+                 string groupName = parts[1];
+                 if (groupName.Equals("YouTube", StringComparison.OrdinalIgnoreCase)) return "yt_folder";  
+                 
+                 if (_browserPages.Contains(groupName))
+                     return "exe_" + MakeSafeFilename(exeName).ToLower();
+                 
+                 return "web_" + MakeSafeFilename(groupName).ToLower();
+             }
+
+             return "exe_" + MakeSafeFilename(exeName).ToLower();
         }
 
         public void TryFetchIconFromHwnd(IntPtr hWnd, string rawAppName)
@@ -550,6 +680,103 @@ namespace Recap
                 using (var b = new SolidBrush(Color.White)) { g.FillRectangle(b, 2, 2, 5, 5); g.FillRectangle(b, 9, 2, 5, 5); g.FillRectangle(b, 2, 9, 5, 5); g.FillRectangle(b, 9, 9, 5, 5); }
             }
             return bmp;
+        }
+
+        private Image GetCompositeIcon(string rawAppName)
+        {
+            string compositeKey = "comp_" + rawAppName.GetHashCode();       
+            
+            lock (_lock)
+            {
+                if (_isDisposed) return _errorIcon;
+                if (_memoryCache.TryGetValue(compositeKey, out var icon)) return icon;
+                if (_failedAttempts.Contains(compositeKey)) return _errorIcon;
+                if (_currentlyLoading.Contains(compositeKey)) return _loadingIcon;
+
+                _currentlyLoading.Add(compositeKey);
+            }
+
+            Task.Run(() =>
+            {
+                try
+                {
+                    LoadCompositeIcon(rawAppName, compositeKey, rawAppName);
+                }
+                catch
+                {
+                    FinishLoading(compositeKey, null, rawAppName);
+                }
+            });
+
+            return _loadingIcon;
+        }
+
+        private void LoadCompositeIcon(string payload, string cacheKey, string originalName)
+        {
+            string[] items = payload.Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries);
+            var apps = items.Skip(1).Take(4).ToList();
+            
+            if (apps.Count == 0)
+            {
+                FinishLoading(cacheKey, null, originalName);
+                return;
+            }
+
+            var images = new List<Image>();
+            foreach (var app in apps)
+            {
+                var icon = GetIcon(app);
+                
+                int retries = 0;
+                while (icon == _loadingIcon && retries < 10)
+                {
+                    System.Threading.Thread.Sleep(50);
+                    icon = GetIcon(app);
+                    retries++;
+                }
+                
+                if (icon == _loadingIcon || icon == null) icon = _errorIcon; 
+                images.Add(icon);
+            }
+
+            Bitmap canvas = new Bitmap(16, 16);     
+            canvas = new Bitmap(32, 32);
+
+            using (var g = Graphics.FromImage(canvas))
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.Clear(Color.Transparent);
+
+                int count = images.Count;
+                
+                if (count == 1)
+                {
+                    g.DrawImage(images[0], 0, 0, 32, 32);
+                }
+                else if (count == 2)
+                {
+                    g.DrawImage(images[0], 8, 0, 16, 16);
+                    g.DrawImage(images[1], 8, 16, 16, 16);
+                }
+                else if (count == 3)
+                {
+                    g.DrawImage(images[0], 8, 0, 16, 16);
+                    
+                    g.DrawImage(images[1], 0, 16, 16, 16);
+                    
+                    g.DrawImage(images[2], 16, 16, 16, 16);
+                }
+                else if (count >= 4)
+                {
+                    g.DrawImage(images[0], 0, 0, 16, 16);
+                    g.DrawImage(images[1], 16, 0, 16, 16);
+                    g.DrawImage(images[2], 0, 16, 16, 16);
+                    g.DrawImage(images[3], 16, 16, 16, 16);
+                }
+            }
+
+            FinishLoading(cacheKey, canvas, originalName);
         }
 
         #region WinAPI

@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -21,9 +20,6 @@ namespace Recap
         private readonly PictureBox _mainPictureBox;
         private readonly VideoView _mainVideoView;
 
-        private string _activeVideoPath = null;
-        private double _videoFps = 1.0;
-
         private CancellationTokenSource _imageLoadCts;
 
         private readonly Label _lblFormatBadge;
@@ -34,6 +30,9 @@ namespace Recap
 
         private readonly AppFilterController _appFilterController;
         private readonly TimelineController _timelineController;
+        
+        private readonly TimelineDataManager _dataManager;
+        private readonly MediaPlayerController _mediaController;
 
         private bool _isLoading = false;
         private bool _isInitialLoad = true;
@@ -42,14 +41,8 @@ namespace Recap
         private DateTime _currentStartDate = DateTime.Today;
         private DateTime _currentEndDate = DateTime.Today;
 
-        private List<MiniFrame> _allLoadedFrames = new List<MiniFrame>();
-        private List<MiniFrame> _filteredFrames = new List<MiniFrame>();
-
-        private string _selectedAppFilter = null;
-        private readonly Dictionary<DateTime, List<MiniFrame>> _dayCache = new Dictionary<DateTime, List<MiniFrame>>();
-        private readonly object _cacheLock = new object();
-        private Dictionary<int, string> _appMap = new Dictionary<int, string>();
-
+        private List<string> _selectedAppFilter = null;
+        
         private System.Windows.Forms.Timer _uiTimer;
         private TextBox _txtOcrSearch;
 
@@ -86,7 +79,9 @@ namespace Recap
             IconManager iconManager,
             AppSettings settings,
             OcrDatabase ocrDb,
-            TextBox txtOcrSearch)
+            TextBox txtOcrSearch,
+            LibVLC libVLC,
+            MediaPlayer mediaPlayer)
         {
             _mainPictureBox = mainPictureBox;
             _mainVideoView = mainVideoView;
@@ -95,6 +90,9 @@ namespace Recap
             _settings = settings;
             _ocrDb = ocrDb;
             _txtOcrSearch = txtOcrSearch;
+
+            _dataManager = new TimelineDataManager(frameRepository, ocrDb, settings);
+            _mediaController = new MediaPlayerController(libVLC, mediaPlayer);
 
             InitializeContextMenu();
 
@@ -105,11 +103,13 @@ namespace Recap
             _uiTimer.Tick += OnUiTimerTick;
             _uiTimer.Start();
 
-            _appFilterController = new AppFilterController(lstAppFilter, txtAppSearch, iconManager, _ocrDb);
+            _appFilterController = new AppFilterController(lstAppFilter, txtAppSearch, iconManager, _ocrDb, _frameRepository);
             lstAppFilter.ShowFrameCount = settings.ShowFrameCount;   
             _timelineController = new TimelineController(timeTrackBar, lblTime, lblInfo, chkAutoScroll, null, frameRepository, iconManager);
 
             _appFilterController.FilterChanged += OnAppFilterChanged;
+            _appFilterController.AppHidden += OnAppHidden;
+            _frameRepository.DataInvalidated += OnDataInvalidated;
             _timelineController.TimeChanged += OnTimeChanged;
 
             txtAppSearch.KeyDown += OnSearchKeyDown;
@@ -127,30 +127,23 @@ namespace Recap
 
         public long GetCurrentTimestamp()
         {
-            if (_filteredFrames != null && _currentFrameIndex >= 0 && _currentFrameIndex < _filteredFrames.Count)
+            if (_dataManager.FilteredFrames != null && _currentFrameIndex >= 0 && _currentFrameIndex < _dataManager.FilteredFrames.Count)
             {
-                return _filteredFrames[_currentFrameIndex].TimestampTicks;
+                return _dataManager.FilteredFrames[_currentFrameIndex].TimestampTicks;
             }
             return -1;
         }
 
         public void JumpToTimestamp(long timestamp)
         {
-            if (_filteredFrames == null) return;
+            if (_dataManager.FilteredFrames == null) return;
             
-            int index = _filteredFrames.FindIndex(f => f.TimestampTicks == timestamp);
+            int index = _dataManager.FilteredFrames.FindIndex(f => f.TimestampTicks == timestamp);
             if (index != -1)
             {
                 _wantedFrameIndex = index;
                 _currentFrameIndex = -1;   
                 _timelineController.CurrentIndex = index;
-            }
-            else
-            {
-                var frame = _frameRepository.GetFrameIndex(timestamp);
-                if (frame.TimestampTicks > 0)
-                {
-                }
             }
         }
 
@@ -228,9 +221,9 @@ namespace Recap
 
         private void ShowOcrText()
         {
-            if (_filteredFrames == null || _currentFrameIndex < 0 || _currentFrameIndex >= _filteredFrames.Count) return;
+            if (_dataManager.FilteredFrames == null || _currentFrameIndex < 0 || _currentFrameIndex >= _dataManager.FilteredFrames.Count) return;
 
-            var miniFrame = _filteredFrames[_currentFrameIndex];
+            var miniFrame = _dataManager.FilteredFrames[_currentFrameIndex];
             string text = GetOcrTextForFrame(miniFrame.TimestampTicks);
             string info = GetFrameInfo(miniFrame);
 
@@ -276,7 +269,7 @@ namespace Recap
         {
             var time = frame.GetTime();
             string appName = "";
-            if (_appMap.TryGetValue(frame.AppId, out string name)) appName = name;
+            if (_dataManager.AppMap.TryGetValue(frame.AppId, out string name)) appName = name;
             return $"{time:yyyy-MM-dd HH:mm:ss} - {appName}";
         }
 
@@ -314,10 +307,10 @@ namespace Recap
         {
             if (_wantedFrameIndex != -1 && _wantedFrameIndex != _currentFrameIndex)
             {
-                if (_filteredFrames != null && _wantedFrameIndex >= 0 && _wantedFrameIndex < _filteredFrames.Count)
+                if (_dataManager.FilteredFrames != null && _wantedFrameIndex >= 0 && _wantedFrameIndex < _dataManager.FilteredFrames.Count)
                 {
                     _currentFrameIndex = _wantedFrameIndex;
-                    var miniFrame = _filteredFrames[_currentFrameIndex];
+                    var miniFrame = _dataManager.FilteredFrames[_currentFrameIndex];
 
                     _timelineController.UpdateTimeLabel(miniFrame.GetTime(), _isGlobalMode);
 
@@ -343,7 +336,6 @@ namespace Recap
                             _currentEndDate = frameDate;
                         }
                     }
-
                     
                     var frame = _frameRepository.GetFrameIndex(miniFrame.TimestampTicks);
                     
@@ -377,31 +369,15 @@ namespace Recap
             DateTime date = frame.GetTime().Date;
             string requiredPath = _frameRepository.GetVideoPathForDate(date);
 
-            var mainForm = _mainPictureBox.FindForm() as MainForm;
-            if (mainForm?.MainMediaPlayer == null || string.IsNullOrEmpty(requiredPath)) return;
+            if (_mediaController.Player == null || string.IsNullOrEmpty(requiredPath)) return;
+            
+            _mediaController.LoadVideo(requiredPath);
 
-            if (_activeVideoPath != requiredPath)
-            {
-                _activeVideoPath = requiredPath;
-
-                Task.Run(async () => {
-                    try
-                    {
-                        var analysis = await FFMpegCore.FFProbe.AnalyseAsync(requiredPath);
-                        _videoFps = analysis.PrimaryVideoStream?.FrameRate ?? 1.0;
-                    }
-                    catch { _videoFps = 1.0; }
-                });
-
-                mainForm.MainMediaPlayer.Media = new Media(mainForm.LibVLC, requiredPath, FromType.FromPath);
-                mainForm.MainMediaPlayer.AspectRatio = null;       
-                _mainVideoView.MediaPlayer = mainForm.MainMediaPlayer;
-                mainForm.MainMediaPlayer.Play();
-            }
-
-            if (_videoFps <= 0) _videoFps = 1.0;
+            double fps = _mediaController.VideoFps;
+            if (fps <= 0) fps = 1.0;
+            
             double frameNumber = (double)frame.DataOffset;
-            long targetTimeMs = (long)((frameNumber / _videoFps) * 1000.0);
+            long targetTimeMs = (long)((frameNumber / fps) * 1000.0);
 
             _pendingVideoTimeMs = targetTimeMs;
         }
@@ -413,11 +389,10 @@ namespace Recap
                 _mainPictureBox.Visible = true;
                 _mainVideoView.Visible = false;
                 UpdateFormatBadge(false);
-
-                var mainForm = _mainPictureBox.FindForm() as MainForm;
-                if (mainForm?.MainMediaPlayer != null && mainForm.MainMediaPlayer.IsPlaying)
+                
+                if (_mediaController.IsPlaying)
                 {
-                    mainForm.MainMediaPlayer.Stop();
+                    _mediaController.Stop();
                 }
             }
 
@@ -428,10 +403,6 @@ namespace Recap
         {
             if (!_mainVideoView.Visible) return;
 
-            var mainForm = _mainPictureBox.FindForm() as MainForm;
-            var player = mainForm?.MainMediaPlayer;
-            if (player == null || player.NativeReference == IntPtr.Zero) return;
-
             try
             {
                 if (_pendingVideoTimeMs >= 0)
@@ -439,15 +410,12 @@ namespace Recap
                     _isScrubbing = true;
                     _lastInteractionTime = DateTime.Now;
 
-                    if (!player.IsPlaying && player.State != VLCState.Buffering)
+                    _mediaController.EnsurePlaying();
+                    
+                    if (_mediaController.IsSeekable)
                     {
-                        player.Mute = true;
-                        player.Play();
-                    }
-                    if (player.IsSeekable)
-                    {
-                        if (Math.Abs(player.Time - _pendingVideoTimeMs) > 100)
-                            player.Time = _pendingVideoTimeMs;
+                        if (Math.Abs(_mediaController.Time - _pendingVideoTimeMs) > 100)
+                            _mediaController.Time = _pendingVideoTimeMs;
 
                         _pendingVideoTimeMs = -1;
                     }
@@ -456,7 +424,7 @@ namespace Recap
                 {
                     if ((DateTime.Now - _lastInteractionTime).TotalMilliseconds > 300)
                     {
-                        if (player.IsPlaying) player.Pause();
+                        if (_mediaController.IsPlaying) _mediaController.Pause();
                         _isScrubbing = false;
                     }
                 }
@@ -551,7 +519,7 @@ namespace Recap
             {
                 _pendingVideoTimeMs = -1;
                 _isScrubbing = false;
-                if (_currentFrameIndex >= 0 && _currentFrameIndex < _filteredFrames.Count)
+                if (_currentFrameIndex >= 0 && _currentFrameIndex < _dataManager.FilteredFrames.Count)
                     _wantedFrameIndex = _currentFrameIndex;
             }
             else
@@ -567,9 +535,7 @@ namespace Recap
         {
             if (_isLoading) return;
             _isLoading = true;
-
-            _allLoadedFrames = null;
-            _filteredFrames = null;
+            
             _timelineController.SetFrames(new List<MiniFrame>(), false, true);
 
             _isInitialLoad = true;
@@ -578,8 +544,7 @@ namespace Recap
             _wantedFrameIndex = -1;
             _currentFrameIndex = -1;
             _selectedAppFilter = null;
-            _activeVideoPath = null;
-
+            
             var parentForm = _mainPictureBox.FindForm();
             if (parentForm != null) parentForm.Cursor = Cursors.WaitCursor;
 
@@ -588,68 +553,13 @@ namespace Recap
             _mainPictureBox.Image?.Dispose();
             _mainPictureBox.Image = null;
 
-            await Task.Run(() =>
-            {
-                _appMap = _frameRepository.GetAppMap();
+            if (startDate.HasValue) _currentStartDate = startDate.Value.Date;
+            if (endDate.HasValue) _currentEndDate = endDate.Value.Date;
+            else if (startDate.HasValue) _currentEndDate = startDate.Value.Date;
 
-                if (_isGlobalMode)
-                {
-                    
-                    var fullFrames = _frameRepository.GlobalSearch(forceGlobalSearchText);
-                    _allLoadedFrames = ConvertToMiniFrames(fullFrames);
-                }
-                else
-                {
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                    GC.Collect();
+            await _dataManager.LoadFramesAsync(startDate, endDate, forceGlobalSearchText);
 
-                    _allLoadedFrames = new List<MiniFrame>();
-
-                    if (startDate.HasValue) _currentStartDate = startDate.Value.Date;
-                    if (endDate.HasValue) _currentEndDate = endDate.Value.Date;
-                    else if (startDate.HasValue) _currentEndDate = startDate.Value.Date;
-
-                    DateTime start = _currentStartDate;
-                    DateTime end = _currentEndDate;
-
-                    for (DateTime date = start.Date; date <= end.Date; date = date.AddDays(1))
-                    {
-                        List<MiniFrame> frames = null;
-
-                        lock (_cacheLock)
-                        {
-                            if (_dayCache.ContainsKey(date))
-                            {
-                                frames = _dayCache[date];
-                            }
-                        }
-
-                        if (frames == null)
-                        {
-                            frames = _frameRepository.LoadMiniFramesForDateFast(date);
-                            lock (_cacheLock)
-                            {
-                                if (!_dayCache.ContainsKey(date))
-                                {
-                                    _dayCache[date] = frames;
-                                }
-                                else
-                                {
-                                    frames = _dayCache[date];
-                                }
-                            }
-                        }
-
-                        if (frames != null)
-                        {
-                            _allLoadedFrames.AddRange(frames);
-                        }
-                    }
-                }
-            });
-
-            await _appFilterController.SetDataAsync(_allLoadedFrames, _appMap);
+            await _appFilterController.SetDataAsync(_dataManager.AllLoadedFrames, _dataManager.AppMap);
             ApplyAppFilterAndDisplay(isLiveUpdate: false);
 
             if (_lstNotes != null && _lstNotes.Visible)
@@ -661,105 +571,40 @@ namespace Recap
             _isLoading = false;
         }
 
-        private List<MiniFrame> ConvertToMiniFrames(List<FrameIndex> fullFrames)
-        {
-            var mini = new List<MiniFrame>(fullFrames.Count);
-            var nameToId = _appMap.ToDictionary(x => x.Value, x => x.Key);
-            
-            foreach (var f in fullFrames)
-            {
-                int id = -1;
-                if (f.AppName != null && nameToId.TryGetValue(f.AppName, out int val)) id = val;
-                mini.Add(new MiniFrame { TimestampTicks = f.TimestampTicks, AppId = id, IntervalMs = f.IntervalMs });
-            }
-            return mini;
-        }
-
         private void ApplyAppFilterAndDisplay(bool isLiveUpdate)
         {
             long currentTimestamp = -1;
-            if (!isLiveUpdate && _filteredFrames != null && _currentFrameIndex >= 0 && _currentFrameIndex < _filteredFrames.Count)
+            if (!isLiveUpdate && _dataManager.FilteredFrames != null && _currentFrameIndex >= 0 && _currentFrameIndex < _dataManager.FilteredFrames.Count)
             {
-                currentTimestamp = _filteredFrames[_currentFrameIndex].TimestampTicks;
+                currentTimestamp = _dataManager.FilteredFrames[_currentFrameIndex].TimestampTicks;
             }
 
-            string filter = _selectedAppFilter;
+            var filter = _selectedAppFilter;
             string ocrText = _txtOcrSearch?.Text?.Trim();
 
-            List<MiniFrame> appFiltered;
+            _dataManager.ApplyFilter(filter, ocrText);
+            var filteredFrames = _dataManager.FilteredFrames;
 
-             if (string.IsNullOrEmpty(filter))
-            {
-            appFiltered = _allLoadedFrames;
-            }
-          else
-      {
-      appFiltered = new List<MiniFrame>();
-         foreach (var f in _allLoadedFrames)
-         {
-   if (MatchesAppFilter(f, filter))
- {
-      appFiltered.Add(f);
-   }
-       }
-         }
-
-            if (!string.IsNullOrEmpty(ocrText) && _ocrDb != null)
-            {
-                try
-                {
-                    string dbFilter = null;
-                    if (!string.IsNullOrEmpty(filter) && !filter.Contains("|YouTube"))
-                    {
-                        dbFilter = filter;
-                    }
-
-                    var matchingFrames = _ocrDb.Search(ocrText, dbFilter);
-                    
-                    if (matchingFrames != null && matchingFrames.Count > 0)
-                    {
-                        var matchingTicks = new HashSet<long>(matchingFrames.Select(f => f.TimestampTicks));
-                        _filteredFrames = appFiltered.Where(f => matchingTicks.Contains(f.TimestampTicks)).ToList();
-                        
-                        DebugLogger.Log($"OCR Search: '{ocrText}' found {_filteredFrames.Count} matches");
-                    }
-                    else
-                    {
-                        _filteredFrames = new List<MiniFrame>();
-                        DebugLogger.Log($"OCR Search: '{ocrText}' - no matches found");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    DebugLogger.LogError("HistoryViewController.OcrSearch", ex);
-                    _filteredFrames = appFiltered;    
-                }
-            }
-            else
-            {
-                _filteredFrames = appFiltered;
-            }
-
-            _timelineController.SetFrames(_filteredFrames, isLiveUpdate, _isInitialLoad);
+            _timelineController.SetFrames(filteredFrames, isLiveUpdate, _isInitialLoad);
             _timelineController.UpdateInfoLabel();
 
-            if (_filteredFrames.Count > 0)
+            if (filteredFrames.Count > 0)
             {
                 if (!isLiveUpdate)
                 {
-                    int targetIndex = _filteredFrames.Count - 1;
+                    int targetIndex = filteredFrames.Count - 1;
 
                     if (currentTimestamp != -1)
                     {
-                        int foundIndex = _filteredFrames.FindIndex(f => f.TimestampTicks >= currentTimestamp);
+                        int foundIndex = filteredFrames.FindIndex(f => f.TimestampTicks >= currentTimestamp);
                         if (foundIndex != -1) targetIndex = foundIndex;
                     }
-                    else if (_isInitialLoad && _filteredFrames.Count > 0)
+                    else if (_isInitialLoad && filteredFrames.Count > 0)
                     {
-                        targetIndex = _filteredFrames.Count - 1;
+                        targetIndex = filteredFrames.Count - 1;
                     }
 
-                    var targetFrame = _frameRepository.GetFrameIndex(_filteredFrames[targetIndex].TimestampTicks);
+                    var targetFrame = _frameRepository.GetFrameIndex(filteredFrames[targetIndex].TimestampTicks);
                     if (targetIndex > 0 && targetFrame.IsVideoFrame)
                     {
                         targetIndex--;
@@ -771,9 +616,9 @@ namespace Recap
                 }
                 else
                 {
-                    if (_currentFrameIndex == -1 && _filteredFrames.Count > 0)
+                     if (_currentFrameIndex == -1 && filteredFrames.Count > 0)
                     {
-                        int targetIndex = _filteredFrames.Count - 1;
+                        int targetIndex = filteredFrames.Count - 1;
                         _wantedFrameIndex = targetIndex;
                         _timelineController.CurrentIndex = targetIndex;
                     }
@@ -789,49 +634,27 @@ namespace Recap
             _isInitialLoad = false;
         }
 
-        private bool MatchesAppFilter(MiniFrame f, string filter)
+        private void OnAppFilterChanged(List<string> newFilter)
         {
-            string appName = "";
-            if (_appMap.TryGetValue(f.AppId, out string name)) appName = name;
-
-            if (appName == filter) return true;
-            if (appName.StartsWith(filter + "|")) return true;
-
-            if (filter.Contains("|YouTube|"))
-            {
-                string dbStyleKey = filter.Replace("|YouTube|", "|");
-                if (appName == dbStyleKey) return true;
-            }
-            if (filter.EndsWith("|YouTube"))
-            {
-                string prefix = filter.Replace("|YouTube", "|youtube.com");
-                if (appName.StartsWith(prefix)) return true;
-                string prefixWww = filter.Replace("|YouTube", "|www.youtube.com");
-                if (appName.StartsWith(prefixWww)) return true;
-            }
-
-            string normalizedFilter = filter.Replace("|www.", "|");
-   string normalizedAppName = appName.Replace("|www.", "|");
-
-            if (normalizedAppName == normalizedFilter) return true;
-            if (normalizedAppName.StartsWith(normalizedFilter + "|")) return true;
-
-       if (normalizedFilter == filter)
- {
-              string filterWithWww = filter.Contains("|") ? filter.Insert(filter.IndexOf('|') + 1, "www.") : filter;
-     if (appName == filterWithWww) return true;
-        if (appName.StartsWith(filterWithWww + "|")) return true;
-            }
-
-          return false;
-        }
-
-        private void OnAppFilterChanged(string newFilter)
-        {
-            if (_selectedAppFilter == newFilter) return;
-
             _selectedAppFilter = newFilter;
             ApplyAppFilterAndDisplay(isLiveUpdate: false);
+        }
+
+        private void OnAppHidden(object sender, EventArgs e)
+        {
+            OnDataInvalidated(sender, e);
+        }
+
+        private void OnDataInvalidated(object sender, EventArgs e)
+        {
+            if (_mainPictureBox.InvokeRequired)
+            {
+                _mainPictureBox.Invoke(new Action(() => OnDataInvalidated(sender, e)));
+                return;
+            }
+
+            _dataManager.ClearCache();
+            _ = ReloadDataAsync(_currentStartDate, _currentEndDate);
         }
 
         private void OnTimeChanged(int newIndex) => _wantedFrameIndex = newIndex;
@@ -845,12 +668,12 @@ namespace Recap
             }
 
             int appId = -1;
-            foreach(var kvp in _appMap) { if (kvp.Value == newFrame.AppName) { appId = kvp.Key; break; } }
+            appId = _dataManager.GetAppId(newFrame.AppName);
             
             if (appId == -1)
             {
-                _appMap = _frameRepository.GetAppMap();
-                foreach(var kvp in _appMap) { if (kvp.Value == newFrame.AppName) { appId = kvp.Key; break; } }
+                _dataManager.UpdateAppMap();
+                appId = _dataManager.GetAppId(newFrame.AppName);
 
                 if (appId != -1)
                 {
@@ -858,76 +681,61 @@ namespace Recap
                 }
                 else
                 {
-                    if (_appMap.Count > 0) appId = _appMap.Keys.Max() + 1;
+                    if (_dataManager.AppMap.Count > 0) appId = _dataManager.AppMap.Keys.Max() + 1;
                     else appId = 1;
                     
-                    _appMap[appId] = newFrame.AppName;
+                    _dataManager.RegisterApp(appId, newFrame.AppName);
                     _appFilterController.RegisterApp(appId, newFrame.AppName);
                 }
             }
 
             var miniFrame = new MiniFrame { TimestampTicks = newFrame.TimestampTicks, AppId = appId, IntervalMs = newFrame.IntervalMs };
 
-            lock (_cacheLock)
+            _dataManager.AddFrameToCache(miniFrame);
+
+            if ((_isGlobalMode || (newFrame.GetTime().Date >= _currentStartDate && newFrame.GetTime().Date <= _currentEndDate)) && _dataManager.AllLoadedFrames != null)
             {
-                if (_dayCache.ContainsKey(DateTime.Today))
+                _dataManager.AddFrameToAll(miniFrame);
+                _appFilterController.AddFrame(miniFrame);
+
+                if (string.IsNullOrEmpty(_txtOcrSearch?.Text?.Trim()))
                 {
-                    if (!_dayCache[DateTime.Today].Any(x => x.TimestampTicks == miniFrame.TimestampTicks))
-                    {
-                        _dayCache[DateTime.Today].Add(miniFrame);
-                    }
+                    ProcessNewFrame(miniFrame);
                 }
-            }
-
-            if ((_isGlobalMode || (newFrame.GetTime().Date >= _currentStartDate && newFrame.GetTime().Date <= _currentEndDate)) && _allLoadedFrames != null)
-            {
-                if (!_allLoadedFrames.Any(x => x.TimestampTicks == miniFrame.TimestampTicks))
+                else
                 {
-                    _allLoadedFrames.Add(miniFrame);
-
-                    _appFilterController.AddFrame(miniFrame);
-
-                    if (string.IsNullOrEmpty(_txtOcrSearch?.Text?.Trim()))
-                    {
-                        ProcessNewFrame(miniFrame);
-                    }
-                    else
-                    {
-                        ApplyAppFilterAndDisplay(isLiveUpdate: true);
-                    }
+                    ApplyAppFilterAndDisplay(isLiveUpdate: true);
                 }
             }
         }
 
         private void ProcessNewFrame(MiniFrame newFrame)
         {
-            string filter = _selectedAppFilter;
+            var filter = _selectedAppFilter;
             
-            bool matches = string.IsNullOrEmpty(filter) || MatchesAppFilter(newFrame, filter);
+            bool matches = (filter == null || filter.Count == 0) || _dataManager.MatchesAppFilter(newFrame, filter);
 
             if (matches)
             {
-                if (_filteredFrames != _allLoadedFrames)
+                if (_dataManager.FilteredFrames != _dataManager.AllLoadedFrames)
                 {
-                    if (!_filteredFrames.Any(x => x.TimestampTicks == newFrame.TimestampTicks))
+                    if (!_dataManager.FilteredFrames.Any(x => x.TimestampTicks == newFrame.TimestampTicks))
                     {
-                        _filteredFrames.Add(newFrame);
+                        _dataManager.FilteredFrames.Add(newFrame);
                     }
                 }
 
-                _timelineController.SetFrames(_filteredFrames, true, false);
+                _timelineController.SetFrames(_dataManager.FilteredFrames, true, false);
                 _timelineController.UpdateInfoLabel();
 
-                if (_currentFrameIndex == -1 && _filteredFrames.Count > 0)
+                if (_currentFrameIndex == -1 && _wantedFrameIndex == -1 && _dataManager.FilteredFrames.Count > 0)
                 {
-                    int newIndex = _filteredFrames.Count - 1;
+                    int newIndex = _dataManager.FilteredFrames.Count - 1;
                     _wantedFrameIndex = newIndex;
                     _timelineController.CurrentIndex = newIndex;
                 }
             }
         }
-
-
 
         private void UpdateFormatBadge(bool isVideo)
         {
@@ -972,25 +780,25 @@ namespace Recap
             }
         }
 
-        public void GetState(out List<MiniFrame> frames, out string filter, out int index)
+        public void GetState(out List<MiniFrame> frames, out List<string> filter, out int index)
         {
-            frames = _allLoadedFrames;
+            frames = _dataManager.AllLoadedFrames;
             filter = _selectedAppFilter;
             index = _currentFrameIndex;
         }
 
-        public void RestoreState(List<MiniFrame> frames, string filter, int index)
+        public void RestoreState(List<MiniFrame> frames, List<string> filter, int index)
         {
-            _allLoadedFrames = frames ?? new List<MiniFrame>();
+            _dataManager.RestoreState(frames);
             _selectedAppFilter = filter;
             _isInitialLoad = true;
-
-            if (_appMap.Count == 0) _appMap = _frameRepository.GetAppMap();
-
-            _appFilterController.SetDataAsync(_allLoadedFrames, _appMap);
+            
+            _appFilterController.SetDataAsync(_dataManager.AllLoadedFrames, _dataManager.AppMap);
+            
             ApplyAppFilterAndDisplay(isLiveUpdate: false);
+            var filteredFrames = _dataManager.FilteredFrames;
 
-            if (index >= 0 && index < _filteredFrames.Count)
+            if (index >= 0 && index < filteredFrames.Count)
             {
                 _wantedFrameIndex = index;
                 _currentFrameIndex = -1;
@@ -1009,8 +817,20 @@ namespace Recap
             var txtAppSearch = _appFilterController.GetType().GetField("_txtAppSearch", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_appFilterController) as TextBox;
             if (txtAppSearch != null) txtAppSearch.KeyDown -= OnSearchKeyDown;
 
-            if (_appFilterController != null) { _appFilterController.FilterChanged -= OnAppFilterChanged; _appFilterController.Dispose(); }
+            if (_appFilterController != null) 
+            { 
+                _appFilterController.FilterChanged -= OnAppFilterChanged; 
+                _appFilterController.AppHidden -= OnAppHidden;
+                _appFilterController.Dispose(); 
+            }
+            if (_frameRepository != null)
+            {
+                _frameRepository.DataInvalidated -= OnDataInvalidated;
+            }
+
             if (_timelineController != null) { _timelineController.TimeChanged -= OnTimeChanged; _timelineController.Dispose(); }
+            
+            _mediaController?.Dispose();
 
             if (_lblFormatBadge != null) _lblFormatBadge.Image = null;
 

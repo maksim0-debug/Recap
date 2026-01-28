@@ -10,12 +10,13 @@ namespace Recap
     public class SettingsForm : Form
     {
         public AppSettings UpdatedSettings { get; private set; }
+        public bool HiddenAppsChanged { get; private set; }
 
-        private ComboBox cmbLanguage, cmbMonitor, cmbQuality, cmbFrequency, cmbBlindZone;
-        private Label lblLang, lblMonitor, lblQuality, lblInterval, lblBlindZone;
+        private ComboBox cmbLanguage, cmbMonitor, cmbQuality, cmbFrequency, cmbBlindZone, cmbCaptureMode;
+        private Label lblLang, lblMonitor, lblQuality, lblInterval, lblBlindZone, lblCaptureMode;
         private Label lblMotionThreshold, lblMotionThresholdValue;
         private TrackBar tbMotionThreshold;
-        private Button btnOk, btnCancel, btnConverter, btnAdvancedSettings;
+        private Button btnOk, btnCancel, btnConverter, btnAdvancedSettings, btnHiddenApps;
         private CheckBox chkGlobalSearch;
         private CheckBox chkShowFrameCount;
         private CheckBox chkEnableOCR;
@@ -26,10 +27,15 @@ namespace Recap
         private readonly int[] _intervals = { 200, 500, 1000, 2000, 3000, 5000, 10000, 30000 };
         private readonly int[] _blindZoneValues = { 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70 };
 
-        public SettingsForm(AppSettings currentSettings)
+        private FrameRepository _repo;
+        private IconManager _iconManager;
+
+        public SettingsForm(AppSettings currentSettings, FrameRepository repo, IconManager iconManager)
         {
             this.Text = Localization.Get("settingsTitle");
             this.UpdatedSettings = currentSettings.Clone();
+            _repo = repo;
+            _iconManager = iconManager;
 
             InitializeComponent();
             SetInitialValues();
@@ -40,7 +46,7 @@ namespace Recap
 
         private void InitializeComponent()
         {
-            this.Size = new Size(420, 550);
+            this.Size = new Size(420, 600);
             this.FormBorderStyle = FormBorderStyle.FixedDialog;
             this.StartPosition = FormStartPosition.CenterParent;
             this.MaximizeBox = false;
@@ -90,6 +96,11 @@ namespace Recap
             cmbBlindZone = new ComboBox { Location = new Point(controlX, topMargin), Size = new Size(controlWidth, 21), DropDownStyle = ComboBoxStyle.DropDownList };
             topMargin += rowHeight;
 
+            lblCaptureMode = new Label { Location = new Point(labelX, topMargin + 3), AutoSize = true };
+            cmbCaptureMode = new ComboBox { Location = new Point(controlX, topMargin), Size = new Size(controlWidth, 21), DropDownStyle = ComboBoxStyle.DropDownList };
+            cmbCaptureMode.Items.AddRange(new object[] { "Auto", "DirectX (DXGI)", "Windows Graphics Capture", "GDI+" });
+            topMargin += rowHeight;
+
             lblMotionThreshold = new Label { Location = new Point(labelX, topMargin + 3), AutoSize = true };
             tbMotionThreshold = new TrackBar { Location = new Point(controlX, topMargin), Size = new Size(controlWidth - 40, 45), Minimum = 0, Maximum = 100, TickFrequency = 10 };
             lblMotionThresholdValue = new Label { Location = new Point(controlX + controlWidth - 35, topMargin + 3), AutoSize = true };
@@ -137,6 +148,13 @@ namespace Recap
             btnAdvancedSettings = new Button { Location = new Point(labelX, this.ClientSize.Height - 80), Size = new Size(160, 23), Anchor = AnchorStyles.Bottom | AnchorStyles.Left, Text = "Advanced Settings" };
             btnAdvancedSettings.Click += (s, e) => { new AdvancedSettingsForm().ShowDialog(); };
 
+            btnHiddenApps = new Button { Location = new Point(labelX + 170, this.ClientSize.Height - 80), Size = new Size(160, 23), Anchor = AnchorStyles.Bottom | AnchorStyles.Left, Text = Localization.Get("hiddenApps") };
+            btnHiddenApps.Click += (s, e) => { 
+                var form = new HiddenAppsForm(_repo, _iconManager);
+                form.ShowDialog();
+                if (form.Changed) HiddenAppsChanged = true;
+            };
+
             btnConverter = new Button { Location = new Point(labelX, this.ClientSize.Height - 45), Size = new Size(120, 23), Anchor = AnchorStyles.Bottom | AnchorStyles.Left, Text = "Recap Converter" };
             btnConverter.Click += (s, e) => { new RecapConverter.ConverterForm().Show(); };
 
@@ -145,7 +163,7 @@ namespace Recap
 
             btnCancel = new Button { Location = new Point(this.ClientSize.Width - 85, this.ClientSize.Height - 45), Size = new Size(75, 23), DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Bottom | AnchorStyles.Right };
 
-            this.Controls.AddRange(new Control[] { lblLang, cmbLanguage, lblMonitor, cmbMonitor, lblQuality, cmbQuality, lblInterval, cmbFrequency, lblBlindZone, cmbBlindZone, lblMotionThreshold, tbMotionThreshold, lblMotionThresholdValue, chkGlobalSearch, chkShowFrameCount, chkEnableOCR, chkEnableHighlighting, chkDisableVideoPreviews, btnAdvancedSettings, btnOk, btnCancel, btnConverter });
+            this.Controls.AddRange(new Control[] { lblLang, cmbLanguage, lblMonitor, cmbMonitor, lblQuality, cmbQuality, lblInterval, cmbFrequency, lblBlindZone, cmbBlindZone, lblCaptureMode, cmbCaptureMode, lblMotionThreshold, tbMotionThreshold, lblMotionThresholdValue, chkGlobalSearch, chkShowFrameCount, chkEnableOCR, chkEnableHighlighting, chkDisableVideoPreviews, btnAdvancedSettings, btnHiddenApps, btnOk, btnCancel, btnConverter });
         }
 
         private void SetInitialValues()
@@ -166,7 +184,6 @@ namespace Recap
             cmbMonitor.SelectedIndex = 0;
             bool found = false;
 
-            // Try to find by ID first (more reliable)
             if (!string.IsNullOrEmpty(UpdatedSettings.MonitorDeviceId))
             {
                 for (int i = 0; i < cmbMonitor.Items.Count; i++)
@@ -181,7 +198,6 @@ namespace Recap
                 }
             }
 
-            // Fallback to Name if ID not found or not set
             if (!found && !string.IsNullOrEmpty(UpdatedSettings.MonitorDeviceName))
             {
                 for (int i = 0; i < cmbMonitor.Items.Count; i++)
@@ -198,6 +214,7 @@ namespace Recap
             cmbQuality.SelectedIndex = GetQualityIndexFromValue(UpdatedSettings.JpegQuality);
             cmbFrequency.SelectedIndex = Math.Max(0, Array.IndexOf(_intervals, UpdatedSettings.IntervalMs));
             cmbBlindZone.SelectedIndex = Math.Max(0, Array.IndexOf(_blindZoneValues, UpdatedSettings.BlindZone));
+            cmbCaptureMode.SelectedIndex = (int)UpdatedSettings.CaptureMode;
         }
 
         private void TranslateUI()
@@ -208,6 +225,7 @@ namespace Recap
             lblQuality.Text = Localization.Get("quality");
             lblInterval.Text = Localization.Get("freq");
             lblBlindZone.Text = Localization.Get("blindZone");
+            lblCaptureMode.Text = Localization.Get("captureMethod");
             lblMotionThreshold.Text = Localization.Get("motionThreshold");
             btnOk.Text = Localization.Get("ok");
             btnCancel.Text = Localization.Get("cancel");
@@ -233,6 +251,9 @@ namespace Recap
 
             _toolTip.SetToolTip(lblBlindZone, Localization.Get("tooltip_BlindZone"));
             _toolTip.SetToolTip(cmbBlindZone, Localization.Get("tooltip_BlindZone"));
+
+            _toolTip.SetToolTip(lblCaptureMode, Localization.Get("tooltip_CaptureMethod"));
+            _toolTip.SetToolTip(cmbCaptureMode, Localization.Get("tooltip_CaptureMethod"));
 
             _toolTip.SetToolTip(lblMotionThreshold, Localization.Get("tooltip_MotionThreshold"));
             _toolTip.SetToolTip(tbMotionThreshold, Localization.Get("tooltip_MotionThreshold"));
@@ -317,6 +338,7 @@ namespace Recap
             UpdatedSettings.JpegQuality = GetQualityValueFromIndex(cmbQuality.SelectedIndex);
             UpdatedSettings.IntervalMs = _intervals[cmbFrequency.SelectedIndex];
             UpdatedSettings.BlindZone = _blindZoneValues[cmbBlindZone.SelectedIndex];
+            UpdatedSettings.CaptureMode = (CaptureMode)cmbCaptureMode.SelectedIndex;
 
             this.DialogResult = DialogResult.OK;
             this.Close();

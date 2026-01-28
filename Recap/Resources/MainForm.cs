@@ -10,7 +10,7 @@ using LibVLCSharp.WinForms;
 
 namespace Recap
 {
-    public partial class MainForm : Form, IMessageFilter
+    public partial class MainForm : Form
     {
         public event Action<Image> FrameChanged;
 
@@ -29,7 +29,6 @@ namespace Recap
         private DarkListBox lstNotes;
         private SuggestionForm _suggestionForm;
         private CheckBox chkAutoStart, chkAutoScroll, chkGlobalSearch;
-        private NotifyIcon notifyIcon;
         private TabControl mainTabControl;
         private ActivityHeatmap activityHeatmap;
 
@@ -41,6 +40,9 @@ namespace Recap
         private readonly IconManager _iconManager;
         private OcrDatabase _ocrDb;
         private OcrService _ocrService;
+
+        private TrayIconManager _trayIconManager;
+        private GlobalHotkeyManager _hotkeyManager;
 
         private CaptureController _captureController;
         private HistoryViewController _historyViewController;
@@ -70,20 +72,38 @@ namespace Recap
         private bool _isNotesMode = false;
         private ContextMenuStrip _ctxMenuNotes;
 
-        public MainForm(bool autoStart)
+        public MainForm(
+            bool autoStart,
+            SettingsManager settingsManager,
+            AppSettings settings,
+            ScreenshotService screenshotService,
+            IconManager iconManager,
+            FrameRepository frameRepository,
+            OcrDatabase ocrDb,
+            OcrService ocrService)
         {
             _startMinimized = autoStart;
+            _settingsManager = settingsManager;
+            _currentSettings = settings;
+            _screenshotService = screenshotService;
+            _iconManager = iconManager;
+            _frameRepository = frameRepository;
+            _ocrDb = ocrDb;
+            _ocrService = ocrService;
 
-            _settingsManager = new SettingsManager();
-            _screenshotService = new ScreenshotService();
-            _iconManager = new IconManager();
             Icon = IconGenerator.GenerateAppIcon();
 
             InitializeComponent();
-            Application.AddMessageFilter(this);
+            
+            _trayIconManager = new TrayIconManager(this.Icon, this.Text);
+            _trayIconManager.ShowRequested += OnShowClicked;
+            _trayIconManager.ExitRequested += OnExitClicked;
 
-            LoadSettingsAndApply();
-            InitializeOcr();
+            _hotkeyManager = new GlobalHotkeyManager(this);
+            _hotkeyManager.NavigationRequested += NavigateFrames;
+
+            AppStyler.Apply(this);
+            ApplyLanguage();
 
             InitializeControllers();
 
@@ -114,7 +134,8 @@ namespace Recap
                 timeTrackBar, lstAppFilter, txtAppSearch,
                 lblTime, lblInfo, chkAutoScroll, lblFormatBadge,
                 _frameRepository, _iconManager,
-                _currentSettings, _ocrDb, txtOcrSearch);
+                _currentSettings, _ocrDb, txtOcrSearch,
+                LibVLC, MainMediaPlayer);
 
             _historyViewController.SetNotesListBox(lstNotes);
 
@@ -214,11 +235,7 @@ namespace Recap
             lblAppFilter.Text = Localization.Get("filterApps");
             chkGlobalSearch.Text = Localization.Get("globalSearch");
 
-            if (notifyIcon != null && notifyIcon.ContextMenuStrip != null && notifyIcon.ContextMenuStrip.Items.Count >= 2)
-            {
-                notifyIcon.ContextMenuStrip.Items[0].Text = Localization.Get("trayShow");
-                notifyIcon.ContextMenuStrip.Items[1].Text = Localization.Get("trayExit");
-            }
+            _trayIconManager?.UpdateLocalization();
 
             tabPageView.Text = Localization.Get("dayViewTab");
             tabPageStats.Text = Localization.Get("statsTab");
@@ -244,12 +261,6 @@ namespace Recap
             if (datePicker.ContextMenuStrip != null && datePicker.ContextMenuStrip.Items.Count > 0)
             {
                 datePicker.ContextMenuStrip.Items[0].Text = Localization.Get("selectRange");
-            }
-
-            if (notifyIcon.ContextMenuStrip != null && notifyIcon.ContextMenuStrip.Items.Count >= 2)
-            {
-                notifyIcon.ContextMenuStrip.Items[0].Text = Localization.Get("trayShow");
-                notifyIcon.ContextMenuStrip.Items[1].Text = Localization.Get("trayExit");
             }
 
             lblAppFilter.Text = Localization.Get("filterApps");
@@ -278,12 +289,6 @@ namespace Recap
 
             LibVLC = new LibVLC();
             MainMediaPlayer = new MediaPlayer(LibVLC);
-
-            ContextMenuStrip trayMenu = new ContextMenuStrip();
-            trayMenu.Items.Add("", null, OnShowClicked);
-            trayMenu.Items.Add("", null, OnExitClicked);
-            notifyIcon = new NotifyIcon { Icon = this.Icon, Text = "Recap", Visible = true, ContextMenuStrip = trayMenu };
-            notifyIcon.DoubleClick += OnShowClicked;
 
             Panel topPanel = new Panel { Dock = DockStyle.Top, Height = 135 };
             topPanel.Layout += TopPanel_Layout;
@@ -508,7 +513,6 @@ namespace Recap
             }
             else
             {
-                Application.RemoveMessageFilter(this);
                 if (_captureController != null) _captureController.DayChanged -= OnDayChanged;
 
                 _captureController?.Dispose();
@@ -516,7 +520,9 @@ namespace Recap
                 _historyViewController?.Dispose();
                 _statisticsViewController?.Dispose();
                 _iconManager.Dispose();
-                notifyIcon.Dispose();
+                
+                _trayIconManager?.Dispose();
+                _hotkeyManager?.Dispose();
 
                 _ocrService?.Stop();
                 _ocrDb?.Dispose();
@@ -681,7 +687,7 @@ namespace Recap
         private void OnExitClicked(object sender, EventArgs e)
         {
             _ocrService?.Stop();
-            notifyIcon.Visible = false;
+            _trayIconManager?.SetVisible(false);
             Application.Exit();
         }
 
@@ -690,7 +696,7 @@ namespace Recap
             try
             {
                 List<MiniFrame> cachedFrames = null;
-                string cachedFilter = null;
+                List<string> cachedFilter = null;
                 int cachedIndex = -1;
                 bool canRestoreState = false;
                 bool wasCapturing = _captureController != null && _captureController.IsCapturing;
@@ -703,7 +709,7 @@ namespace Recap
                 string oldStoragePath = _currentSettings.StoragePath;
                 bool oldGlobalSearch = _currentSettings.GlobalSearch;
 
-                using (var settingsForm = new SettingsForm(_currentSettings.Clone()))
+                using (var settingsForm = new SettingsForm(_currentSettings.Clone(), _frameRepository, _iconManager))
                 {
                     var result = settingsForm.ShowDialog(this);
 
@@ -737,7 +743,8 @@ namespace Recap
                         UpdateLocalization();
 
                         if (oldStoragePath == _currentSettings.StoragePath &&
-                            oldGlobalSearch == _currentSettings.GlobalSearch)
+                            oldGlobalSearch == _currentSettings.GlobalSearch && 
+                            !settingsForm.HiddenAppsChanged)
                         {
                             canRestoreState = true;
                         }
@@ -912,27 +919,7 @@ namespace Recap
             }
         }
 
-        public bool PreFilterMessage(ref Message m)
-        {
-            if (m.Msg == 0x020A && Form.ActiveForm == this)
-            {
-                int delta = (short)((m.WParam.ToInt64() >> 16) & 0xFFFF);
 
-                if ((Control.ModifierKeys & Keys.Shift) == Keys.Shift)
-                {
-                    int frames = (delta > 0 ? 100 : -100);
-                    NavigateFrames(frames);
-                    return true;
-                }
-                else if ((Control.ModifierKeys & Keys.Control) == Keys.Control)
-                {
-                    int frames = (delta > 0 ? 10 : -10);
-                    NavigateFrames(frames);
-                    return true;
-                }
-            }
-            return false;
-        }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {

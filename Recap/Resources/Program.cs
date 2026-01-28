@@ -33,7 +33,9 @@ namespace Recap
 
                 bool autoStart = args.Contains("/autostart");
 
-                Application.Run(new MainForm(autoStart));
+                var bootstrapper = new Bootstrapper();
+                var mainForm = bootstrapper.CreateMainForm(autoStart);
+                Application.Run(mainForm);
             }
             catch (Exception ex)
             {

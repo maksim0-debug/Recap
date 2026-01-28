@@ -11,6 +11,8 @@ namespace Recap
     {
         private readonly string _storagePath;
         private OcrDatabase _ocrDb;
+        private HashSet<string> _hiddenApps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public event EventHandler DataInvalidated;
 
         private const int IoBufferSize = 65536;
 
@@ -25,11 +27,66 @@ namespace Recap
             _ocrDb = ocrDb;
 
             if (!string.IsNullOrEmpty(_storagePath)) Directory.CreateDirectory(_storagePath);
+            LoadHiddenApps();
         }
 
         public void SetOcrDatabase(OcrDatabase ocrDb)
         {
             _ocrDb = ocrDb;
+            LoadHiddenApps();
+        }
+
+        private void LoadHiddenApps()
+        {
+            if (_ocrDb != null)
+            {
+                _hiddenApps = _ocrDb.GetHiddenApps();
+            }
+        }
+
+        public void HideApp(string appName)
+        {
+            if (_ocrDb != null)
+            {
+                _ocrDb.HideApp(appName);
+                _ocrDb.ClearAllDailyActivityStats();
+                LoadHiddenApps();
+                DataInvalidated?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public void UnhideApp(string appName)
+        {
+            if (_ocrDb != null)
+            {
+                _ocrDb.UnhideApp(appName);
+                _ocrDb.ClearAllDailyActivityStats();
+                LoadHiddenApps();
+                DataInvalidated?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        public HashSet<string> GetHiddenApps()
+        {
+            return _hiddenApps;
+        }
+
+        public Dictionary<string, string> GetAliases()
+        {
+            return _ocrDb?.LoadAppAliases() ?? new Dictionary<string, string>();
+        }
+
+        private bool IsHidden(string appName)
+        {
+            if (_hiddenApps.Count == 0) return false;
+            if (_hiddenApps.Contains(appName)) return true;
+            foreach (var h in _hiddenApps)
+            {
+                if (appName.StartsWith(h, StringComparison.OrdinalIgnoreCase) &&
+                   (appName.Length == h.Length || appName[h.Length] == '|'))
+                    return true;
+            }
+            return false;
         }
 
         private string GetDataPath(DateTime date) => Path.Combine(_storagePath, date.ToString("yyyy-MM-dd") + ".sch");
@@ -66,6 +123,8 @@ namespace Recap
                             {
                                 foreach (var frame in framesInFile)
                                 {
+                                    if (IsHidden(frame.AppName)) continue;
+
                                     if (string.IsNullOrEmpty(searchText) || frame.AppName.ToLower().Contains(searchText))
                                     {
                                         results.Add(frame);
@@ -306,7 +365,15 @@ namespace Recap
                                 DataLength = dataLen,
                                 IntervalMs = 0 
                             };
-                            frames.Add(frame);
+                            
+                            if (!IsHidden(appName))
+                            {
+                                frames.Add(frame);
+                            }
+                            if (!IsHidden(appName))
+                            {
+                                frames.Add(frame);
+                            }
                         }
                         catch (EndOfStreamException) { break; }
                     }
@@ -360,7 +427,10 @@ namespace Recap
                                 DataLength = -1,
                                 IntervalMs = 0
                             };
-                            frames.Add(frame);
+                            if (!IsHidden(appName))
+                            {
+                                frames.Add(frame);
+                            }
                         }
                     }
                 }
@@ -670,7 +740,10 @@ namespace Recap
             
             if (_ocrDb.IsDayIndexed(dayStr))
             {
-                return _ocrDb.GetFramesMetaForDay(dayStr, appFilter);
+                var filters = string.IsNullOrEmpty(appFilter) || appFilter == "All Applications" 
+                              ? null 
+                              : new System.Collections.Generic.List<string> { appFilter };
+                return _ocrDb.GetFramesMetaForDay(dayStr, filters);
             }
             
             var frames = LoadFramesForDate(date);

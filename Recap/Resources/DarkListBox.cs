@@ -200,12 +200,16 @@ namespace Recap
                 Image icon = IconManager.GetIcon(item.RawName);
                 if (icon != null)
                 {
-                    var oldMode = g.InterpolationMode;
-                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    try
+                    {
+                        var oldMode = g.InterpolationMode;
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
 
-                    g.DrawImage(icon, iconX, iconY, iconW, iconH);
+                        g.DrawImage(icon, iconX, iconY, iconW, iconH);
 
-                    g.InterpolationMode = oldMode;
+                        g.InterpolationMode = oldMode;
+                    }
+                    catch { }      
                 }
             }
 

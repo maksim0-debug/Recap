@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Recap.Resources;
+using Recap.Resources.CaptureProviders;
 using Windows.Graphics.Capture;
 using Windows.Graphics.DirectX;
 using Windows.Graphics.DirectX.Direct3D11;
@@ -18,25 +19,35 @@ namespace Recap
 {
     public class ScreenshotService : IDisposable
     {
-        public AppSettings Settings { get; set; }
+        private AppSettings _settings;
+
+        public AppSettings Settings
+        {
+            get => _settings;
+            set
+            {
+                if (_settings != null && value != null && _settings.CaptureMode != value.CaptureMode)
+                {
+                    _provider?.Dispose();
+                    _provider = null;
+                }
+                _settings = value;
+            }
+        }
         private static readonly ImageCodecInfo JpegEncoder;
         private static readonly EncoderParameters EncoderParams;
         private Bitmap _reusableBitmap;
         private Bitmap _reusableSmallBitmap;
 
-        private bool _wgcInitialized;
-        private IDirect3DDevice _device;
-        private IntPtr _d3dDevicePtr;
-        private IntPtr _d3dContextPtr;
-        private GraphicsCaptureItem _captureItem;
-        private Direct3D11CaptureFramePool _framePool;
-        private GraphicsCaptureSession _session;
-        private IntPtr _stagingTexturePtr;
-        private Size _currentCaptureSize;
-        private IntPtr _currentMonitorHandle;
-        private bool _wgcFailed;
+        private ICaptureProvider _provider;
+        private CaptureMode _activeMode;
+        private DateTime _fallbackStartTime;
+        private bool _inFallbackMode;
 
-        public string LastUsedCaptureMethod { get; private set; } = "None";
+        private WindowStyleManager _windowStyleManager;
+        private IntPtr _currentGameWindow = IntPtr.Zero;
+
+        public string LastUsedCaptureMethod => _provider?.Name ?? "None";
 
         [DllImport("user32.dll")]
         private static extern IntPtr GetDC(IntPtr hWnd);
@@ -114,41 +125,14 @@ namespace Recap
 
         public void Dispose()
         {
-            DisposeWgc();
+            _windowStyleManager?.Dispose();
+            _windowStyleManager = null;
+            _provider?.Dispose();
+            _provider = null;
             _reusableBitmap?.Dispose();
             _reusableBitmap = null;
             _reusableSmallBitmap?.Dispose();
             _reusableSmallBitmap = null;
-        }
-
-        private void DisposeWgc()
-        {
-            try
-            {
-                _session?.Dispose();
-                _framePool?.Dispose();
-                
-                if (_stagingTexturePtr != IntPtr.Zero)
-                {
-                    WgcInterop.D3D11Manual.Release(_stagingTexturePtr);
-                    _stagingTexturePtr = IntPtr.Zero;
-                }
-                
-                if (_d3dDevicePtr != IntPtr.Zero)
-                {
-                    WgcInterop.D3D11Manual.Release(_d3dDevicePtr);
-                    _d3dDevicePtr = IntPtr.Zero;
-                }
-                
-                (_device as IDisposable)?.Dispose();
-            }
-            catch { }
-            
-            _session = null;
-            _framePool = null;
-            _captureItem = null;
-            _device = null;
-            _wgcInitialized = false;
         }
 
         public Task<(byte[] JpegBytes, byte[] NewHash, int IntervalMs, Bitmap FullBitmap)> TakeScreenshotAsync(byte[] previousHash, string saveFullResPath = null, bool returnFullBitmap = false)
@@ -221,10 +205,10 @@ namespace Recap
 
                     if (screenToCapture != null && !string.IsNullOrEmpty(this.Settings.MonitorDeviceId))
                     {
-                         if (deviceIds != null && deviceIds.ContainsKey(screenToCapture.DeviceName) && deviceIds[screenToCapture.DeviceName] == this.Settings.MonitorDeviceId)
-                         {
-                             this.Settings.MonitorDeviceName = screenToCapture.DeviceName;
-                         }
+                        if (deviceIds != null && deviceIds.ContainsKey(screenToCapture.DeviceName) && deviceIds[screenToCapture.DeviceName] == this.Settings.MonitorDeviceId)
+                        {
+                            this.Settings.MonitorDeviceName = screenToCapture.DeviceName;
+                        }
                     }
 
                     captureX = screenToCapture.Bounds.X;
@@ -245,44 +229,9 @@ namespace Recap
                     }
 
                     var fullBmp = _reusableBitmap;
-                    bool captured = false;
 
-                    if (this.Settings.UseWindowsGraphicsCapture && !_wgcFailed && this.Settings.MonitorDeviceName != "AllScreens")
-                    {
-                        try 
-                        {
-                            captured = CaptureWithWgc(captureX, captureY, captureWidth, captureHeight, fullBmp);
-                            if (captured)
-                            {
-                                LastUsedCaptureMethod = "WGC";
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            DebugLogger.LogError("ScreenshotService.WgcCapture", ex);
-                            _wgcFailed = true;
-                            DisposeWgc();
-                        }
-                    }
-
-                    if (!captured)
-                    {
-                        LastUsedCaptureMethod = "GDI+";
-                        using (Graphics g = Graphics.FromImage(fullBmp))
-                        {
-                            IntPtr hdcDest = g.GetHdc();
-                            IntPtr hdcSrc = GetDC(IntPtr.Zero);
-                            try
-                            {
-                                BitBlt(hdcDest, 0, 0, fullBmp.Width, fullBmp.Height, hdcSrc, captureX, captureY, SRCCOPY | CAPTUREBLT);
-                            }
-                            finally
-                            {
-                                g.ReleaseHdc(hdcDest);
-                                ReleaseDC(IntPtr.Zero, hdcSrc);
-                            }
-                        }
-                    }
+                    var result = CaptureWithFallback(screenToCapture, fullBmp);
+                    if (!result.Success) return ((byte[])null, previousHash, currentInterval, null);
 
                     try
                     {
@@ -300,7 +249,7 @@ namespace Recap
                                     POINT screenPos = new POINT { X = 0, Y = 0 };
                                     ClientToScreen(hWnd, ref screenPos);
                                     Rectangle checkRect = new Rectangle(screenPos.X, screenPos.Y, width, height);
-                                    
+
                                     if (Screen.PrimaryScreen.Bounds.IntersectsWith(checkRect))
                                     {
                                         if (IsAreaBlack(fullBmp, checkRect))
@@ -398,199 +347,197 @@ namespace Recap
             });
         }
 
-        private bool CaptureWithWgc(int captureX, int captureY, int captureWidth, int captureHeight, Bitmap fullBmp)
+        private CaptureResult CaptureWithFallback(Screen screen, Bitmap target)
+        {
+            if (_provider == null) DetermineAndInitProvider(Settings.CaptureMode);
+
+            if (_inFallbackMode && (DateTime.UtcNow - _fallbackStartTime).TotalSeconds > 30)
+            {
+                _inFallbackMode = false;
+                DetermineAndInitProvider(Settings.CaptureMode);
+            }
+
+            CaptureResult result = TryCaptureGameWindow(screen, target);
+            if (result != null && result.Success)
+            {
+                return result;
+            }
+
+            result = null;
+            try
+            {
+                _provider.Initialize(screen);
+                result = _provider.Capture(target);
+            }
+            catch
+            {
+                result = new CaptureResult { Success = false };
+            }
+
+            if (!result.Success)
+            {
+                if (TryFallback(result.DeviceLost))
+                {
+                    try
+                    {
+                        _provider.Initialize(screen);
+                        result = _provider.Capture(target);
+                    }
+                    catch
+                    {
+                        result = new CaptureResult { Success = false };
+                    }
+                }
+            }
+
+            if (!result.Success && !(_provider is GdiCaptureProvider) && Settings.CaptureMode == CaptureMode.Auto)
+            {
+                InitializeProvider(CaptureMode.ForceGDI);
+                try
+                {
+                    _provider.Initialize(screen);
+                    result = _provider.Capture(target);
+                }
+                catch { }
+            }
+
+            return result ?? new CaptureResult { Success = false };
+        }
+
+        private CaptureResult TryCaptureGameWindow(Screen screen, Bitmap target)
         {
             try
             {
-                InitializeWgcIfNeeded();
-
-                RECT rect = new RECT { Left = captureX, Top = captureY, Right = captureX + captureWidth, Bottom = captureY + captureHeight };
-                IntPtr hMonitor = MonitorFromRect(ref rect, MONITOR_DEFAULTTOPRIMARY);
-
-                if (hMonitor != _currentMonitorHandle || _session == null)
+                if (Settings.CaptureMode != CaptureMode.Auto && Settings.CaptureMode != CaptureMode.ForceWGC)
                 {
-                    RestartSession(hMonitor, new Size(captureWidth, captureHeight));
-                }
-                else if (_currentCaptureSize.Width != captureWidth || _currentCaptureSize.Height != captureHeight)
-                {
-                    RestartSession(hMonitor, new Size(captureWidth, captureHeight));
+                    return null;
                 }
 
-                if (_framePool == null) return false;
-
-                Direct3D11CaptureFrame frame = null;
-                for (int i = 0; i < 5; i++)    
+                if (_windowStyleManager == null)
                 {
-                    frame = _framePool.TryGetNextFrame();
-                    if (frame != null) break;
-                    
-                    System.Threading.Thread.Sleep(5); 
+                    _windowStyleManager = new WindowStyleManager();
                 }
 
-                if (frame == null) 
+                IntPtr foregroundWindow = GetForegroundWindow();
+                if (foregroundWindow == IntPtr.Zero) return null;
+
+                if (!_windowStyleManager.IsGameWindow(foregroundWindow))
                 {
-                    return false; 
+                    return null;
                 }
 
-                using (frame)
-                using (var surface = frame.Surface)
+                System.Diagnostics.Debug.WriteLine($"Detected game window: {foregroundWindow}");
+
+                if (_currentGameWindow != foregroundWindow)
                 {
-                     var interopAccess = (WgcInterop.IDirect3DDxgiInterfaceAccess)surface;
-                     var iid = WgcInterop.IID_ID3D11Texture2D;
-                     IntPtr texturePtr = interopAccess.GetInterface(ref iid);
-                     
-                     try
-                     {
-                         WgcInterop.D3D11_TEXTURE2D_DESC desc = WgcInterop.D3D11Manual.GetDesc(texturePtr);
-                         
-                         if (_stagingTexturePtr == IntPtr.Zero)
-                         {
-                             CreateStagingTexture(desc);
-                         }
-                         else
-                         {
-                             var stagingDesc = WgcInterop.D3D11Manual.GetDesc(_stagingTexturePtr);
-                             if (stagingDesc.Width != desc.Width || stagingDesc.Height != desc.Height)
-                             {
-                                 WgcInterop.D3D11Manual.Release(_stagingTexturePtr);
-                                 CreateStagingTexture(desc);
-                             }
-                         }
+                    _windowStyleManager.ApplyBorderlessFullscreen(foregroundWindow, screen);
+                    _currentGameWindow = foregroundWindow;
+                    System.Threading.Thread.Sleep(50);         
+                }
 
-                         WgcInterop.D3D11Manual.CopyResource(_d3dContextPtr, _stagingTexturePtr, texturePtr);
-                         
-                         WgcInterop.D3D11_MAPPED_SUBRESOURCE map = WgcInterop.D3D11Manual.Map(_d3dContextPtr, _stagingTexturePtr, 0, WgcInterop.D3D11_MAP.D3D11_MAP_READ, 0);
-                         
-                         try
-                         {
-                             BitmapData bmpData = fullBmp.LockBits(
-                                 new Rectangle(0, 0, fullBmp.Width, fullBmp.Height), 
-                                 ImageLockMode.WriteOnly, 
-                                 PixelFormat.Format32bppRgb); 
-
-                             try
-                             {
-                                 int height = Math.Min((int)desc.Height, fullBmp.Height);
-                                 int width = Math.Min((int)desc.Width, fullBmp.Width);
-                                 int bytesPerPixel = 4;  
-                                 int copyWidth = width * bytesPerPixel;
-
-                                 for (int y = 0; y < height; y++)
-                                 {
-                                     IntPtr srcRow = map.pData + (y * (int)map.RowPitch);
-                                     IntPtr destRow = bmpData.Scan0 + (y * bmpData.Stride);
-                                     CopyMemory(destRow, srcRow, (uint)copyWidth);
-                                 }
-                             }
-                             finally
-                             {
-                                 fullBmp.UnlockBits(bmpData);
-                             }
-                         }
-                         finally
-                         {
-                             WgcInterop.D3D11Manual.Unmap(_d3dContextPtr, _stagingTexturePtr, 0);
-                         }
-                     }
-                     finally
-                     {
-                         WgcInterop.D3D11Manual.Release(texturePtr);
-                     }
+                if (_provider is WgcCaptureProvider wgcProvider)
+                {
+                    if (wgcProvider.InitializeForWindow(foregroundWindow))
+                    {
+                        return wgcProvider.Capture(target);
+                    }
+                }
+                else
+                {
+                    var wgc = new WgcCaptureProvider();
+                    if (wgc.IsAvailable() && wgc.InitializeForWindow(foregroundWindow))
+                    {
+                        _provider?.Dispose();
+                        _provider = wgc;
+                        return wgc.Capture(target);
+                    }
+                    else
+                    {
+                        wgc.Dispose();
+                    }
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"WGC Capture Error: {ex.Message}");
-                throw;        
+                System.Diagnostics.Debug.WriteLine($"TryCaptureGameWindow error: {ex}");
             }
-            return true;
+
+            return null;
         }
 
-        private void InitializeWgcIfNeeded()
+        private void DetermineAndInitProvider(CaptureMode mode)
         {
-            if (_wgcInitialized) return;
-
-            int hr = WgcInterop.D3D11CreateDevice(
-                IntPtr.Zero, 
-                WgcInterop.D3D_DRIVER_TYPE_HARDWARE, 
-                IntPtr.Zero, 
-                WgcInterop.D3D11_CREATE_DEVICE_BGRA_SUPPORT, 
-                IntPtr.Zero,
-                0, 
-                WgcInterop.D3D11_SDK_VERSION, 
-                out _d3dDevicePtr, 
-                out int featureLevel, 
-                out _d3dContextPtr);
-
-            if (hr < 0 || _d3dDevicePtr == IntPtr.Zero) 
-                throw new Exception("Failed to create D3D11 device");
-            
-            IntPtr dxgiDevice = IntPtr.Zero;
-            Guid iidIDXGIDevice = new Guid("54ec77fa-1377-44e6-8c32-88fd5f44c84c");
-            Marshal.QueryInterface(_d3dDevicePtr, ref iidIDXGIDevice, out dxgiDevice);
-
-             try
-             {
-                 IntPtr inspectableDevice;
-                 uint result = WgcInterop.CreateDirect3D11DeviceFromDXGIDevice(dxgiDevice, out inspectableDevice);
-                 if (result != 0) throw new Exception("Failed to create WinRT D3D Device");
-                 _device = (IDirect3DDevice)Marshal.GetObjectForIUnknown(inspectableDevice);
-                 Marshal.Release(inspectableDevice);
-             }
-             finally
-             {
-                 if (dxgiDevice != IntPtr.Zero) Marshal.Release(dxgiDevice);
-             }
-
-            _wgcInitialized = true;
+            InitializeProvider(mode);
         }
 
-        private void RestartSession(IntPtr hMonitor, Size size)
+        private void InitializeProvider(CaptureMode mode)
         {
-            _session?.Dispose();
-            _framePool?.Dispose();
-            
-            var activationFactory = WindowsRuntimeMarshal.GetActivationFactory(typeof(GraphicsCaptureItem));
-            var interop = (WgcInterop.IGraphicsCaptureItemInterop)activationFactory;
-             
-            Guid guidItem = new Guid("79C3F95B-31F7-4EC2-A464-632EF5D30760");
-            IntPtr itemPtr = interop.CreateForMonitor(hMonitor, ref guidItem);
-            
-            if (itemPtr == IntPtr.Zero) throw new Exception("Failed to create GraphicsCaptureItem for monitor.");
+            _provider?.Dispose();
+            _provider = null;
+            _activeMode = mode;
 
-            _captureItem = (GraphicsCaptureItem)Marshal.GetObjectForIUnknown(itemPtr);
-            Marshal.Release(itemPtr);
+            if (mode == CaptureMode.Auto)
+            {
+                var dxgi = new DxgiCaptureProvider();
+                if (dxgi.IsAvailable())
+                {
+                    _provider = dxgi;
+                    return;
+                }
 
-            _framePool = Direct3D11CaptureFramePool.CreateFreeThreaded(
-                _device, 
-                Windows.Graphics.DirectX.DirectXPixelFormat.B8G8R8A8UIntNormalized, 
-                1, 
-                new Windows.Graphics.SizeInt32 { Width = size.Width, Height = size.Height });
+                var wgc = new WgcCaptureProvider();
+                if (wgc.IsAvailable())
+                {
+                    _provider = wgc;
+                    return;
+                }
 
-            _session = _framePool.CreateCaptureSession(_captureItem);
-            _session.IsCursorCaptureEnabled = true;    
-            _session.StartCapture();
-
-             try 
-    {
-        _session.IsBorderRequired = false;    
-    }
-    catch {            }
-
-    _session.StartCapture();
-
-    _currentMonitorHandle = hMonitor;
-    _currentCaptureSize = size;
-}
-
-        private void CreateStagingTexture(WgcInterop.D3D11_TEXTURE2D_DESC desc)
-        {
-            desc.Usage = (int)WgcInterop.D3D11_USAGE.D3D11_USAGE_STAGING;
-            desc.CPUAccessFlags = (uint)WgcInterop.D3D11_CPU_ACCESS_FLAG.D3D11_CPU_ACCESS_READ;
-            desc.BindFlags = 0;
-            desc.MiscFlags = 0;
-            _stagingTexturePtr = WgcInterop.D3D11Manual.CreateTexture2D(_d3dDevicePtr, desc);
+                _provider = new GdiCaptureProvider();
+            }
+            else if (mode == CaptureMode.ForceDXGI)
+            {
+                _provider = new DxgiCaptureProvider();
+            }
+            else if (mode == CaptureMode.ForceWGC)
+            {
+                _provider = new WgcCaptureProvider();
+            }
+            else
+            {
+                _provider = new GdiCaptureProvider();
+            }
         }
+
+        private bool TryFallback(bool isDeviceLost)
+        {
+            if (Settings.CaptureMode == CaptureMode.Auto)
+            {
+                if (_provider is DxgiCaptureProvider)
+                {
+                    var wgc = new WgcCaptureProvider();
+                    if (wgc.IsAvailable())
+                    {
+                        _provider.Dispose();
+                        _provider = wgc;
+                        _inFallbackMode = true;
+                        _fallbackStartTime = DateTime.UtcNow;
+                        return true;
+                    }
+                }
+
+                if (_provider is DxgiCaptureProvider || _provider is WgcCaptureProvider)
+                {
+                    _provider.Dispose();
+                    _provider = new GdiCaptureProvider();
+                    _inFallbackMode = true;
+                    _fallbackStartTime = DateTime.UtcNow;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
 
         private bool IsAreaBlack(Bitmap bmp, Rectangle rect)
         {
@@ -658,9 +605,9 @@ namespace Recap
                     if (childClass.ToString() == "Chrome_RenderWidgetHostHWND")
                     {
                         childWnd = h;
-                        return false;  
+                        return false;
                     }
-                    return true;  
+                    return true;
                 }, IntPtr.Zero);
 
                 if (childWnd != IntPtr.Zero)

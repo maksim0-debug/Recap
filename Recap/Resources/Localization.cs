@@ -90,6 +90,9 @@ namespace Recap
                     { "rangePickerStart", "Start Date:" },
                     { "rangePickerEnd", "End Date:" },
                     { "excludeApp", "Exclude application" },
+                    { "excludeSelected", "Exclude Selected" },
+                    { "excludeAll", "Exclude All" },
+                    { "manageGroupTitle", "Manage Group" },
                     { "activityTooltip", "{0}:00 - {1}:00\nActivity: {2}h {3}m" },
                     { "activity", "Activity" },
                     { "timeFormatFull", "{0}h {1}m {2}s" },
@@ -162,7 +165,21 @@ namespace Recap
                     { "convLogWriteErr", "Write error: {0}" },
                     { "convLogFinished", "Finished: {0}" },
                     { "convProgress", "Frame {0}/{1} (Video: {2})" },
-                    { "aliasDuplicateWarning", "Name already exists. Suggested:" }
+                    { "aliasDuplicateWarning", "Name already exists. Suggested:" },
+                    { "mergeAppsConfirm", "Name '{0}' is already in use. Merge apps into one group?" },
+                    { "merge", "Merge" },
+                    { "unique", "Make Unique" },
+                    { "hideApp", "Hide Application" },
+                    { "hideAppConfirm", "Are you sure you want to hide this application? It will be excluded from timeline and statistics." },
+                    { "hiddenApps", "Hidden Apps" },
+                    { "unhide", "Unhide" },
+                    { "unhideAll", "Unhide All" },
+                    { "unhideAllConfirm", "Are you sure you want to unhide all applications?" },
+                    { "close", "Close" },
+                    { "captureMethod", "Capture Method:" },
+                    { "tooltip_CaptureMethod", "Select the screen capture method." },
+                    { "changeIcon", "Change Icon..." },
+                    { "resetIcon", "Reset Icon" }
                 }
             },
             {
@@ -246,6 +263,9 @@ namespace Recap
                     { "chartReset", "Сброс фильтра" },
                     { "loadingData", "Загрузка данных..." },
                     { "excludeApp", "Исключить приложение" },
+                    { "excludeSelected", "Исключить выбранные" },
+                    { "excludeAll", "Исключить все" },
+                    { "manageGroupTitle", "Управление группой" },
                     { "activityTooltip", "{0}:00 - {1}:00\nАктивность: {2}ч {3}м" },
                     { "activity", "Активность" },
                     { "timeFormatFull", "{0}ч {1}м {2}с" },
@@ -318,7 +338,21 @@ namespace Recap
                     { "convLogWriteErr", "Ошибка записи: {0}" },
                     { "convLogFinished", "Завершено: {0}" },
                     { "convProgress", "Кадр {0}/{1} (Видео: {2})" },
-                    { "aliasDuplicateWarning", "Имя уже существует. Предлагается:" }
+                    { "aliasDuplicateWarning", "Имя уже существует. Предлагается:" },
+                    { "mergeAppsConfirm", "Имя '{0}' уже используется. Объединить приложения в одну группу?" },
+                    { "merge", "Объединить" },
+                    { "unique", "Новое имя" },
+                    { "hideApp", "Скрыть приложение" },
+                    { "hideAppConfirm", "Вы уверены, что хотите скрыть это приложение? Оно будет исключено из таймлайна и статистики." },
+                    { "hiddenApps", "Скрытые приложения" },
+                    { "unhide", "Восстановить" },
+                    { "unhideAll", "Восстановить все" },
+                    { "unhideAllConfirm", "Вы уверены, что хотите восстановить все приложения?" },
+                    { "close", "Закрыть" },
+                    { "captureMethod", "Метод захвата:" },
+                    { "tooltip_CaptureMethod", "Выберите метод захвата экрана." },
+                    { "changeIcon", "Сменить иконку..." },
+                    { "resetIcon", "Сбросить иконку" }
                 }
             },
             {
@@ -402,6 +436,9 @@ namespace Recap
                     { "chartReset", "Скинути фільтр" },
                     { "loadingData", "Завантаження даних..." },
                     { "excludeApp", "Виключити застосунок" },
+                    { "excludeSelected", "Виключити вибрані" },
+                    { "excludeAll", "Виключити всі" },
+                    { "manageGroupTitle", "Управління групою" },
                     { "activityTooltip", "{0}:00 - {1}:00\nАктивність: {2}год {3}хв" },
                     { "activity", "Активність" },
                     { "timeFormatFull", "{0}г {1}х {2}с" },
@@ -474,7 +511,21 @@ namespace Recap
                     { "convLogWriteErr", "Помилка запису: {0}" },
                     { "convLogFinished", "Завершено: {0}" },
                     { "convProgress", "Кадр {0}/{1} (Відео: {2})" },
-                    { "aliasDuplicateWarning", "Назва вже існує. Пропонується:" }
+                    { "aliasDuplicateWarning", "Назва вже існує. Пропонується:" },
+                    { "mergeAppsConfirm", "Назва '{0}' вже використовується. Об'єднати додатки в одну групу?" },
+                    { "merge", "Об'єднати" },
+                    { "unique", "Нова назва" },
+                    { "hideApp", "Приховати програму" },
+                    { "hideAppConfirm", "Ви впевнені, що хочете приховати цю програму? Вона буде виключена з часової шкали та статистики." },
+                    { "hiddenApps", "Приховані програми" },
+                    { "unhide", "Відновити" },
+                    { "unhideAll", "Відновити все" },
+                    { "unhideAllConfirm", "Ви впевнені, що хочете відновити всі програми?" },
+                    { "close", "Закрити" },
+                    { "captureMethod" , "Метод захоплення:" },
+                    { "tooltip_CaptureMethod", "Виберіть метод захоплення екрану." },
+                    { "changeIcon", "Змінити іконку..." },
+                    { "resetIcon", "Скинути іконку" }
                 }
             }
         };

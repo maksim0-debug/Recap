@@ -160,7 +160,7 @@ namespace Recap
         public bool EnableDebugLogging { get; set; } = false;
 
         [Category("5. Debug & Logging")]
-        [Description("Show which capture method is being used (WGC or GDI+).")]
+        [Description("Show which capture method is being used (DXGI, WGC or GDI+).")]
         [DefaultValue(false)]
         public bool ShowCaptureMethod { get; set; } = false;
     }

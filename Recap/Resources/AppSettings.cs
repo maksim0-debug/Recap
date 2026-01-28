@@ -1,5 +1,13 @@
 ﻿namespace Recap
 {
+    public enum CaptureMode
+    {
+        Auto,
+        ForceDXGI,
+        ForceWGC,
+        ForceGDI
+    }
+
     public class AppSettings
     {
         public string StoragePath { get; set; }
@@ -31,6 +39,8 @@
         public bool SuppressExtensionWarning { get; set; }
 
         public bool UseWindowsGraphicsCapture { get; set; } = true;
+
+        public CaptureMode CaptureMode { get; set; } = CaptureMode.Auto;
 
         public AppSettings Clone()
         {

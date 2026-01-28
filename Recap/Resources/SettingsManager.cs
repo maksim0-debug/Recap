@@ -57,6 +57,7 @@ namespace Recap
                         settings.MonitorDeviceName = (rk.GetValue("MonitorDeviceName") as string);
                         settings.MonitorDeviceId = (rk.GetValue("MonitorDeviceId") as string);
                         settings.ConverterLastPath = (rk.GetValue("ConverterLastPath") as string);
+                        settings.CaptureMode = (CaptureMode)Convert.ToInt32(rk.GetValue("CaptureMode", (int)settings.CaptureMode));
 
                         settings.SuppressExtensionWarning = Convert.ToBoolean(rk.GetValue("SuppressExtensionWarning", settings.SuppressExtensionWarning));
                     }
@@ -96,6 +97,7 @@ namespace Recap
                     rk.SetValue("MotionThreshold", settings.MotionThreshold, RegistryValueKind.DWord);
                     rk.SetValue("MonitorDeviceName", settings.MonitorDeviceName ?? "", RegistryValueKind.String);
                     rk.SetValue("MonitorDeviceId", settings.MonitorDeviceId ?? "", RegistryValueKind.String);
+                    rk.SetValue("CaptureMode", (int)settings.CaptureMode, RegistryValueKind.DWord);
 
                     rk.SetValue("SuppressExtensionWarning", settings.SuppressExtensionWarning, RegistryValueKind.DWord);
                 }
