@@ -365,3 +365,4 @@ FodyWeavers.xsd
 Recap.Tests/
 .vscode/
 .idea/
+/poe.json
