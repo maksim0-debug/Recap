@@ -16,9 +16,18 @@ namespace Recap
         
         private readonly Dictionary<DateTime, List<MiniFrame>> _dayCache = new Dictionary<DateTime, List<MiniFrame>>();
         private readonly object _cacheLock = new object();
+        private readonly object _allFramesLock = new object();
         private Dictionary<int, string> _appMap = new Dictionary<int, string>();
 
         public List<MiniFrame> AllLoadedFrames => _allLoadedFrames;
+
+        public List<MiniFrame> GetAllLoadedFramesCopy()
+        {
+            lock (_allFramesLock)
+            {
+                return _allLoadedFrames != null ? new List<MiniFrame>(_allLoadedFrames) : null;
+            }
+        }
         public List<MiniFrame> FilteredFrames => _filteredFrames;
         public Dictionary<int, string> AppMap => _appMap;
 
@@ -31,8 +40,11 @@ namespace Recap
 
         public async Task LoadFramesAsync(DateTime? startDate, DateTime? endDate, string forceGlobalSearchText)
         {
-            _allLoadedFrames = null;
-            _filteredFrames = null;
+            lock (_allFramesLock)
+            {
+                _allLoadedFrames = null;
+                _filteredFrames = null;
+            }
             
             bool isGlobalMode = _settings.GlobalSearch;
 
@@ -43,14 +55,17 @@ namespace Recap
                 if (isGlobalMode)
                 {
                     var fullFrames = _frameRepository.GlobalSearch(forceGlobalSearchText);
-                    _allLoadedFrames = ConvertToMiniFrames(fullFrames);
+                    lock (_allFramesLock)
+                    {
+                        _allLoadedFrames = ConvertToMiniFrames(fullFrames);
+                    }
                 }
                 else
                 {
                     GC.Collect();
                     GC.WaitForPendingFinalizers();
 
-                    _allLoadedFrames = new List<MiniFrame>();
+                    var newFrames = new List<MiniFrame>();
 
                     DateTime start = startDate ?? DateTime.Today;
                     DateTime end = endDate ?? start;
@@ -85,8 +100,13 @@ namespace Recap
 
                         if (frames != null)
                         {
-                            _allLoadedFrames.AddRange(frames);
+                            newFrames.AddRange(frames);
                         }
+                    }
+
+                    lock (_allFramesLock)
+                    {
+                        _allLoadedFrames = newFrames;
                     }
                 }
             });
@@ -96,20 +116,36 @@ namespace Recap
         {
             List<MiniFrame> appFiltered;
 
-            if (appFilter == null || appFilter.Count == 0)
+            lock (_allFramesLock)
             {
-                appFiltered = _allLoadedFrames ?? new List<MiniFrame>();
-            }
-            else
-            {
-                appFiltered = new List<MiniFrame>();
-                if (_allLoadedFrames != null)
+                if (appFilter == null || appFilter.Count == 0)
                 {
-                    foreach (var f in _allLoadedFrames)
+                    appFiltered = _allLoadedFrames != null ? new List<MiniFrame>(_allLoadedFrames) : new List<MiniFrame>();
+                }
+                else
+                {
+                    HashSet<int> validAppIds = new HashSet<int>();
+                    foreach (var kvp in _appMap)
                     {
-                        if (MatchesAppFilter(f, appFilter))
+                        if (DoesAppMatchFilter(kvp.Value, appFilter)) 
                         {
-                            appFiltered.Add(f);
+                            validAppIds.Add(kvp.Key);
+                        }
+                    }
+                    if (DoesAppMatchFilter("", appFilter))
+                    {
+                        validAppIds.Add(-1);
+                    }
+
+                    appFiltered = new List<MiniFrame>();
+                    if (_allLoadedFrames != null)
+                    {
+                        foreach (var f in _allLoadedFrames)
+                        {
+                            if (validAppIds.Contains(f.AppId))
+                            {
+                                appFiltered.Add(f);
+                            }
                         }
                     }
                 }
@@ -176,9 +212,12 @@ namespace Recap
 
         public void AddFrameToAll(MiniFrame frame)
         {
-            if (_allLoadedFrames != null && !_allLoadedFrames.Any(x => x.TimestampTicks == frame.TimestampTicks))
+            lock (_allFramesLock)
             {
-                _allLoadedFrames.Add(frame);
+                if (_allLoadedFrames != null && !_allLoadedFrames.Any(x => x.TimestampTicks == frame.TimestampTicks))
+                {
+                    _allLoadedFrames.Add(frame);
+                }
             }
         }
 
@@ -188,6 +227,14 @@ namespace Recap
 
             string appName = "";
             if (_appMap.TryGetValue(f.AppId, out string name)) appName = name;
+
+            return DoesAppMatchFilter(appName, filters);
+        }
+
+        public bool DoesAppMatchFilter(string appName, List<string> filters)
+        {
+            if (filters == null || filters.Count == 0) return true;
+            if (appName == null) appName = "";
 
             foreach (var filter in filters)
             {
@@ -242,7 +289,10 @@ namespace Recap
 
         public void RestoreState(List<MiniFrame> frames)
         {
-            _allLoadedFrames = frames ?? new List<MiniFrame>();
+            lock (_allFramesLock)
+            {
+                _allLoadedFrames = frames ?? new List<MiniFrame>();
+            }
             if (_appMap.Count == 0) _appMap = _frameRepository.GetAppMap();
         }
 

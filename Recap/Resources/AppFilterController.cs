@@ -57,7 +57,7 @@ namespace Recap
             "browser.exe",
             "firefox.exe",
             "telegram.exe", "ayugram.exe", "kotatogram.exe", "64gram.exe",
-            "code.exe", "devenv.exe"
+            "code.exe", "devenv.exe", "antigravity.exe"
         };
 
         private readonly HashSet<string> _messengers = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -91,10 +91,15 @@ namespace Recap
             _txtAppSearch.TextChanged += TxtAppSearch_TextChanged;
         }
 
+        public void SetEnabled(bool enabled)
+        {
+            _lstAppFilter.Enabled = enabled;
+        }
+
         public async System.Threading.Tasks.Task SetDataAsync(List<MiniFrame> frames, Dictionary<int, string> appMap)
         {
             _isLoading = true;
-            _currentFrames = frames;
+            _currentFrames = frames ?? new List<MiniFrame>();
             _appMap = appMap;
             _parsedAppInfoCache.Clear();
 
@@ -107,6 +112,7 @@ namespace Recap
             DebugLogger.Log($"[AppFilter] RebuildStats took {sw.ElapsedMilliseconds} ms.");
 
             sw.Restart();
+            RebuildAggregatedStats();
             RefreshAppFilterList();
             sw.Stop();
             DebugLogger.Log($"[AppFilter] RefreshAppFilterList took {sw.ElapsedMilliseconds} ms.");
@@ -126,6 +132,7 @@ namespace Recap
             }
 
             UpdateStatsWithFrame(newFrame);
+            RebuildAggregatedStats();
             RefreshAppFilterList();
         }
 
@@ -144,6 +151,8 @@ namespace Recap
             public Dictionary<string, NodeData> Children = new Dictionary<string, NodeData>();
             public bool IsVideoNode;
             public string VideoId;
+            public List<KeyValuePair<string, NodeData>> SortedChildrenByTime;
+            public List<KeyValuePair<string, NodeData>> SortedChildrenByFrames;
         }
 
         private class ParsedAppInfo
@@ -461,42 +470,12 @@ namespace Recap
             return info;
         }
 
-        private void RefreshAppFilterList()
+        private List<KeyValuePair<string, (NodeData Node, List<string> Raws, string PrimaryRaw)>> _cachedSortedGroupsByTime;
+        private List<KeyValuePair<string, (NodeData Node, List<string> Raws, string PrimaryRaw)>> _cachedSortedGroupsByFrames;
+
+        private void RebuildAggregatedStats()
         {
-            if (_lstAppFilter == null || _lstAppFilter.IsDisposed) return;
-
-            string savedSelection = null;
-            if (_lstAppFilter.SelectedIndex >= 0 && _lstAppFilter.SelectedIndex < _viewItems.Count)
-                savedSelection = _viewItems[_lstAppFilter.SelectedIndex].DisplayName;
-
-            int savedTopIndex = _lstAppFilter.TopIndex;
-
-            _lstAppFilter.BeginUpdate();
-            _lstAppFilter.Items.Clear();
-            _viewItems.Clear();
-
             var stats = _cachedStats;
-            long globalTotal = _cachedGlobalTotal;
-            int globalFrameCount = _cachedGlobalFrameCount;
-
-            string searchText = _txtAppSearch.Text.Trim().ToLower();
-            bool isSearch = !string.IsNullOrWhiteSpace(searchText) && searchText != Localization.Get("searchApps").ToLower();
-
-            var allItem = new FilterItem
-            {
-                RawName = Localization.Get("allApps"),
-                DisplayName = Localization.Get("allApps"),
-                DurationMs = globalTotal,
-                FrameCount = globalFrameCount,
-                Level = 0,
-                HasChildren = false
-            };
-            allItem.RawNames.Add(Localization.Get("allApps"));
-            _viewItems.Add(allItem);
-            _lstAppFilter.Items.Add(allItem);
-
-            bool sortByFrames = _lstAppFilter.ShowFrameCount;
-
             var groupedParams = new Dictionary<string, (NodeData Node, List<string> Raws, string PrimaryRaw)>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var kvp in stats)
@@ -544,9 +523,82 @@ namespace Recap
                 }
             }
 
-            var sortedGroups = sortByFrames
-                ? groupedParams.OrderByDescending(kv => kv.Value.Node.FrameCount)
-                : groupedParams.OrderByDescending(kv => kv.Value.Node.TotalMs);
+            foreach (var kvp in groupedParams)
+            {
+                SortNodeChildren(kvp.Value.Node);
+            }
+
+            _cachedSortedGroupsByTime = groupedParams.OrderByDescending(kv => kv.Value.Node.TotalMs).ToList();
+            _cachedSortedGroupsByFrames = groupedParams.OrderByDescending(kv => kv.Value.Node.FrameCount).ToList();
+        }
+
+        private void SortNodeChildren(NodeData node)
+        {
+            node.SortedChildrenByTime = node.Children.OrderByDescending(x => x.Value.TotalMs).ToList();
+            node.SortedChildrenByFrames = node.Children.OrderByDescending(x => x.Value.FrameCount).ToList();
+            foreach (var child in node.Children.Values)
+            {
+                SortNodeChildren(child);
+            }
+        }
+
+        private bool CheckIfAnyChildMatches(NodeData node, string searchText)
+        {
+            if (node.Children == null || node.Children.Count == 0) return false;
+            
+            foreach (var child in node.Children)
+            {
+                if (child.Key.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0) 
+                    return true;
+                    
+                if (CheckIfAnyChildMatches(child.Value, searchText)) 
+                    return true;
+            }
+            return false;
+        }
+
+        private void RefreshAppFilterList()
+        {
+            if (_lstAppFilter == null || _lstAppFilter.IsDisposed) return;
+
+            string savedSelection = null;
+            if (_lstAppFilter.SelectedIndex >= 0 && _lstAppFilter.SelectedIndex < _viewItems.Count)
+                savedSelection = _viewItems[_lstAppFilter.SelectedIndex].DisplayName;
+
+            int savedTopIndex = _lstAppFilter.TopIndex;
+
+            _lstAppFilter.BeginUpdate();
+            _lstAppFilter.Items.Clear();
+            _viewItems.Clear();
+
+            var stats = _cachedStats;
+            long globalTotal = _cachedGlobalTotal;
+            int globalFrameCount = _cachedGlobalFrameCount;
+
+            string searchText = _txtAppSearch.Text.Trim().ToLower();
+            bool isSearch = !string.IsNullOrWhiteSpace(searchText) && searchText != Localization.Get("searchApps").ToLower();
+
+            var allItem = new FilterItem
+            {
+                RawName = Localization.Get("allApps"),
+                DisplayName = Localization.Get("allApps"),
+                DurationMs = globalTotal,
+                FrameCount = globalFrameCount,
+                Level = 0,
+                HasChildren = false
+            };
+            allItem.RawNames.Add(Localization.Get("allApps"));
+            _viewItems.Add(allItem);
+            _lstAppFilter.Items.Add(allItem);
+
+            bool sortByFrames = _lstAppFilter.ShowFrameCount;
+
+            if (_cachedSortedGroupsByTime == null || _cachedSortedGroupsByFrames == null)
+            {
+                RebuildAggregatedStats();
+            }
+
+            var sortedGroups = sortByFrames ? _cachedSortedGroupsByFrames : _cachedSortedGroupsByTime;
 
             foreach (var groupKvp in sortedGroups)
             {
@@ -557,6 +609,22 @@ namespace Recap
                 bool isMergedGroup = info.Raws.Count > 1;
                 bool hasChildren = isMergedGroup || appNode.Children.Count > 0;
 
+                if (isSearch)
+                {
+                    bool parentMatches = displayName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0;
+                    
+                    if (!parentMatches)
+                    {
+                        bool childrenMatch = CheckIfAnyChildMatches(appNode, searchText);
+                        
+                        if (!childrenMatch && isMergedGroup)
+                        {
+                            childrenMatch = info.Raws.Any(r => r.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0);
+                        }
+
+                        if (!childrenMatch) continue; 
+                    }
+                }
                 string expandKey = displayName; 
                 bool isAppExpanded = _expandedApps.Contains(expandKey) || isSearch;
 
@@ -598,6 +666,14 @@ namespace Recap
                         foreach (var member in memberStats)
                         {
                             string memberName = member.RawName;
+                            
+                            if (isSearch)
+                            {
+                                bool match = memberName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                             CheckIfAnyChildMatches(member.Node, searchText);
+                                if (!match && displayName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) < 0) 
+                                    continue; 
+                            }
                             var memberNode = member.Node;
                             bool memberHasChildren = memberNode.Children.Count > 0;
                             string memberExpandKey = $"{expandKey}|{memberName}";
@@ -640,14 +716,28 @@ namespace Recap
 
         private void RenderChildren(NodeData parentNode, string parentRaw, string parentKey, bool sortByFrames, bool isSearch, string searchText, int level)
         {
-            var sortedChildren = sortByFrames
-                ? parentNode.Children.OrderByDescending(x => x.Value.FrameCount)
-                : parentNode.Children.OrderByDescending(x => x.Value.TotalMs);
+            var sortedChildren = sortByFrames ? parentNode.SortedChildrenByFrames : parentNode.SortedChildrenByTime;
 
             foreach (var childKvp in sortedChildren)
             {
                 string childName = childKvp.Key;
                 var childNode = childKvp.Value;
+                
+                if (isSearch)
+                {
+                    bool childMatches = childName.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0;
+                    
+                    if (!childMatches)
+                    {
+                        childMatches = CheckIfAnyChildMatches(childNode, searchText);
+                    }
+                    
+                    if (!childMatches)
+                    {
+                        bool parentMatches = parentRaw.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (!parentMatches) continue; 
+                    }
+                }
                 bool hasGrandChildren = childNode.Children.Count > 0;
                 string fullGroupKey = $"{parentKey}|{childName}";
 
@@ -722,7 +812,9 @@ namespace Recap
                         _expandedGroups.Add(key);
                 }
 
+                _ignoreNextSelectionChange = true;
                 RefreshAppFilterList();
+                _ignoreNextSelectionChange = false;
             }
         }
 
@@ -733,7 +825,8 @@ namespace Recap
 
             var item = _viewItems[index];
 
-            if (item.HasChildren)
+            int clickArea = 20 + (item.Level * 10);
+            if (item.HasChildren && e.X >= clickArea)
             {
                 string key = item.RequestExpandKey ?? (item.Level == 0 ? item.DisplayName : item.RawName);
 
@@ -752,13 +845,17 @@ namespace Recap
                         _expandedGroups.Add(key);
                 }
 
+                _ignoreNextSelectionChange = true;
                 RefreshAppFilterList();
+                _ignoreNextSelectionChange = false;
             }
         }
 
+        private bool _ignoreNextSelectionChange = false;
+
         private void LstAppFilter_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (_isLoading) return;
+            if (_isLoading || _ignoreNextSelectionChange) return;
             int index = _lstAppFilter.SelectedIndex;
             if (index < 0 || index >= _viewItems.Count) return;
 
@@ -903,6 +1000,7 @@ namespace Recap
                              }
                          }
                      }
+                     RebuildAggregatedStats();
                      RefreshAppFilterList();
                  }
              }
@@ -971,6 +1069,7 @@ namespace Recap
                         _aliases[raw] = newName;
                         _db.SetAppAlias(raw, newName);
                     }
+                    RebuildAggregatedStats();
                     RefreshAppFilterList();
                 }
             }
@@ -992,6 +1091,7 @@ namespace Recap
                         _db.RemoveAppAlias(raw);
                     }
                 }
+                RebuildAggregatedStats();
                 RefreshAppFilterList();
             }
         }

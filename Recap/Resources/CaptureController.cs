@@ -200,6 +200,24 @@ namespace Recap
                         }
                     }
                 }
+                else if (procLower.Contains("antigravity"))
+                {
+                    string title = ActiveWindowHelper.GetWindowTitleFromHwnd(hWnd);
+                    if (title.StartsWith("● ")) title = title.Substring(2);
+
+                    string[] parts = title.Split(new[] { " - Antigravity - " }, StringSplitOptions.None);
+                    if (parts.Length == 2)
+                    {
+                        string projName = parts[0].Trim();
+                        string fileName = parts[1].Trim();
+                        finalAppName = $"{processName}|{projName}|{fileName}";
+                    }
+                    else
+                    {
+                        string clean = CleanupTitle(title, new[] { " - Antigravity" });
+                        finalAppName = $"{processName}|{clean}";
+                    }
+                }
                 else if (procLower.Contains("telegram") || procLower.Contains("ayugram") || procLower.Contains("kotatogram"))
                 {
                     string title = ActiveWindowHelper.GetWindowTitleFromHwnd(hWnd);
@@ -220,6 +238,23 @@ namespace Recap
                     }
                 }
 
+                bool isBlacklisted = false;
+                if (_settings.OcrBlacklist != null && _settings.OcrBlacklist.Count > 0)
+                {
+                    string procClean = processName.ToLower().Replace(".exe", "");
+                    
+                    foreach (string item in _settings.OcrBlacklist)
+                    {
+                        string itemClean = item.ToLower().Replace(".exe", "");
+                        
+                        if (procClean == itemClean)
+                        {
+                            isBlacklisted = true;
+                            break;
+                        }
+                    }
+                }
+
                 FrameIndex? newFrame = await _frameRepository.SaveFrame(result.JpegBytes, finalAppName, result.IntervalMs);
 
                 if (newFrame.HasValue)
@@ -235,7 +270,7 @@ namespace Recap
                         }
                     }
 
-                    if (_ocrService != null)
+                    if (_ocrService != null && _settings.EnableOCR && !isBlacklisted)
                     {
                         try 
                         {

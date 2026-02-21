@@ -112,7 +112,31 @@ namespace Recap
             chkShowFrameCount = new CheckBox { Location = new Point(labelX, topMargin), AutoSize = true, Text = "Show Frame Count" };
             topMargin += 25;
             chkEnableOCR = new CheckBox { Location = new Point(labelX, topMargin), AutoSize = true, Text = "Enable OCR" };
-            topMargin += 25;
+
+            topMargin += 25; 
+
+            var btnManageExclusions = new Button 
+            { 
+                Location = new Point(labelX + 20, topMargin), 
+                Size = new Size(160, 25), 
+                Text = Localization.Get("manageExclusions") 
+            };
+            btnManageExclusions.Click += (s, e) => 
+            {
+                using (var form = new OcrExclusionForm(UpdatedSettings.OcrBlacklist, _repo, _iconManager))
+                {
+                    if (form.ShowDialog() == DialogResult.OK)
+                    {
+                        UpdatedSettings.OcrBlacklist.Clear();
+                        foreach (string item in form.Blacklist)
+                        {
+                            UpdatedSettings.OcrBlacklist.Add(item);
+                        }
+                    }
+                }
+            };
+
+            topMargin += 30; 
             chkEnableHighlighting = new CheckBox { Location = new Point(labelX, topMargin), AutoSize = true, Text = "Enable Text Highlighting" };
             topMargin += 25;
             chkDisableVideoPreviews = new CheckBox { Location = new Point(labelX, topMargin), AutoSize = true, Text = "Disable Video Previews" };
@@ -163,7 +187,7 @@ namespace Recap
 
             btnCancel = new Button { Location = new Point(this.ClientSize.Width - 85, this.ClientSize.Height - 45), Size = new Size(75, 23), DialogResult = DialogResult.Cancel, Anchor = AnchorStyles.Bottom | AnchorStyles.Right };
 
-            this.Controls.AddRange(new Control[] { lblLang, cmbLanguage, lblMonitor, cmbMonitor, lblQuality, cmbQuality, lblInterval, cmbFrequency, lblBlindZone, cmbBlindZone, lblCaptureMode, cmbCaptureMode, lblMotionThreshold, tbMotionThreshold, lblMotionThresholdValue, chkGlobalSearch, chkShowFrameCount, chkEnableOCR, chkEnableHighlighting, chkDisableVideoPreviews, btnAdvancedSettings, btnHiddenApps, btnOk, btnCancel, btnConverter });
+            this.Controls.AddRange(new Control[] { lblLang, cmbLanguage, lblMonitor, cmbMonitor, lblQuality, cmbQuality, lblInterval, cmbFrequency, lblBlindZone, cmbBlindZone, lblCaptureMode, cmbCaptureMode, lblMotionThreshold, tbMotionThreshold, lblMotionThresholdValue, chkGlobalSearch, chkShowFrameCount, chkEnableOCR, btnManageExclusions, chkEnableHighlighting, chkDisableVideoPreviews, btnAdvancedSettings, btnHiddenApps, btnOk, btnCancel, btnConverter });
         }
 
         private void SetInitialValues()

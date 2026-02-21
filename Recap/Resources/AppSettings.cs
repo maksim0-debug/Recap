@@ -40,6 +40,8 @@
 
         public bool UseWindowsGraphicsCapture { get; set; } = true;
 
+        public System.Collections.Specialized.StringCollection OcrBlacklist { get; set; } = new System.Collections.Specialized.StringCollection();
+
         public CaptureMode CaptureMode { get; set; } = CaptureMode.Auto;
 
         public AppSettings Clone()

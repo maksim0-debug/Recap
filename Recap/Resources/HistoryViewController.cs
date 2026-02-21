@@ -559,7 +559,7 @@ namespace Recap
 
             await _dataManager.LoadFramesAsync(startDate, endDate, forceGlobalSearchText);
 
-            await _appFilterController.SetDataAsync(_dataManager.AllLoadedFrames, _dataManager.AppMap);
+            await _appFilterController.SetDataAsync(_dataManager.GetAllLoadedFramesCopy(), _dataManager.AppMap);
             ApplyAppFilterAndDisplay(isLiveUpdate: false);
 
             if (_lstNotes != null && _lstNotes.Visible)
@@ -571,7 +571,7 @@ namespace Recap
             _isLoading = false;
         }
 
-        private void ApplyAppFilterAndDisplay(bool isLiveUpdate)
+        private async void ApplyAppFilterAndDisplay(bool isLiveUpdate)
         {
             long currentTimestamp = -1;
             if (!isLiveUpdate && _dataManager.FilteredFrames != null && _currentFrameIndex >= 0 && _currentFrameIndex < _dataManager.FilteredFrames.Count)
@@ -582,7 +582,18 @@ namespace Recap
             var filter = _selectedAppFilter;
             string ocrText = _txtOcrSearch?.Text?.Trim();
 
-            _dataManager.ApplyFilter(filter, ocrText);
+            var parentForm = _mainPictureBox.FindForm();
+            if (parentForm != null) parentForm.Cursor = Cursors.WaitCursor;
+            _appFilterController.SetEnabled(false);
+
+            await Task.Run(() => 
+            {
+                _dataManager.ApplyFilter(filter, ocrText);
+            });
+
+            if (parentForm != null) parentForm.Cursor = Cursors.Default;
+            _appFilterController.SetEnabled(true);
+
             var filteredFrames = _dataManager.FilteredFrames;
 
             _timelineController.SetFrames(filteredFrames, isLiveUpdate, _isInitialLoad);
@@ -793,7 +804,7 @@ namespace Recap
             _selectedAppFilter = filter;
             _isInitialLoad = true;
             
-            _appFilterController.SetDataAsync(_dataManager.AllLoadedFrames, _dataManager.AppMap);
+            _appFilterController.SetDataAsync(_dataManager.GetAllLoadedFramesCopy(), _dataManager.AppMap);
             
             ApplyAppFilterAndDisplay(isLiveUpdate: false);
             var filteredFrames = _dataManager.FilteredFrames;

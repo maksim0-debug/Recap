@@ -60,6 +60,12 @@ namespace Recap
                         settings.CaptureMode = (CaptureMode)Convert.ToInt32(rk.GetValue("CaptureMode", (int)settings.CaptureMode));
 
                         settings.SuppressExtensionWarning = Convert.ToBoolean(rk.GetValue("SuppressExtensionWarning", settings.SuppressExtensionWarning));
+
+                        if (rk.GetValue("OcrBlacklist") is string[] blacklistArray)
+                        {
+                            settings.OcrBlacklist.Clear();
+                            settings.OcrBlacklist.AddRange(blacklistArray);
+                        }
                     }
                 }
 
@@ -100,6 +106,13 @@ namespace Recap
                     rk.SetValue("CaptureMode", (int)settings.CaptureMode, RegistryValueKind.DWord);
 
                     rk.SetValue("SuppressExtensionWarning", settings.SuppressExtensionWarning, RegistryValueKind.DWord);
+
+                    if (settings.OcrBlacklist != null)
+                    {
+                        string[] blacklistArray = new string[settings.OcrBlacklist.Count];
+                        settings.OcrBlacklist.CopyTo(blacklistArray, 0);
+                        rk.SetValue("OcrBlacklist", blacklistArray, RegistryValueKind.MultiString);
+                    }
                 }
 
                 using (RegistryKey rkRun = Registry.CurrentUser.OpenSubKey(RunRegistryPath, true))

@@ -107,7 +107,7 @@ namespace Recap
             string payload = exeName;
 
             if (lowerExe.Contains("code.exe") || lowerExe.Contains("devenv.exe") || 
-                lowerExe.Contains("code") || lowerExe.Contains("visualstudio")) 
+                lowerExe.Contains("code") || lowerExe.Contains("visualstudio") || lowerExe.Contains("antigravity")) 
             {
                 cacheKey = "exe_" + MakeSafeFilename(exeName).ToLower();
                 type = IconType.Exe;
@@ -433,7 +433,7 @@ namespace Recap
              string lowerExe = exeName.ToLower();
 
              if (lowerExe.Contains("code.exe") || lowerExe.Contains("devenv.exe") || 
-                 lowerExe.Contains("code") || lowerExe.Contains("visualstudio")) 
+                 lowerExe.Contains("code") || lowerExe.Contains("visualstudio") || lowerExe.Contains("antigravity")) 
              {
                  return "exe_" + MakeSafeFilename(exeName).ToLower();
              }

@@ -181,7 +181,14 @@ namespace Recap
                     { "captureMethod", "Capture Method:" },
                     { "tooltip_CaptureMethod", "Select the screen capture method." },
                     { "changeIcon", "Change Icon..." },
-                    { "resetIcon", "Reset Icon" }
+                    { "resetIcon", "Reset Icon" },
+                    { "manageExclusions", "Manage Exclusions" },
+                    { "ocrExclusionTitle", "Manage OCR Exclusions" },
+                    { "ocrExclusionInfo", "Applications in this list will be ignored by OCR. Screenshots will not be processed or saved temporarily." },
+                    { "addFromHistory", "Add from History" },
+                    { "addFromFile", "Add from File..." },
+                    { "removeSelected", "Remove Selected" },
+                    { "selectAppsToBlacklist", "Select Applications to Blacklist" }
                 }
             },
             {
@@ -356,7 +363,14 @@ namespace Recap
                     { "captureMethod", "Метод захвата:" },
                     { "tooltip_CaptureMethod", "Выберите метод захвата экрана." },
                     { "changeIcon", "Сменить иконку..." },
-                    { "resetIcon", "Сбросить иконку" }
+                    { "resetIcon", "Сбросить иконку" },
+                    { "manageExclusions", "Управление исключениями" },
+                    { "ocrExclusionTitle", "Исключения OCR" },
+                    { "ocrExclusionInfo", "Приложения из этого списка будут игнорироваться OCR. Скриншоты не будут обрабатываться или сохраняться временно." },
+                    { "addFromHistory", "Добавить из истории" },
+                    { "addFromFile", "Добавить из файла..." },
+                    { "removeSelected", "Удалить выбранные" },
+                    { "selectAppsToBlacklist", "Выберите приложения для блокировки" }
                 }
             },
             {
@@ -531,7 +545,14 @@ namespace Recap
                     { "captureMethod" , "Метод захоплення:" },
                     { "tooltip_CaptureMethod", "Виберіть метод захоплення екрану." },
                     { "changeIcon", "Змінити іконку..." },
-                    { "resetIcon", "Скинути іконку" }
+                    { "resetIcon", "Скинути іконку" },
+                    { "manageExclusions", "Керування винятками" },
+                    { "ocrExclusionTitle", "Винятки OCR" },
+                    { "ocrExclusionInfo", "Програми з цього списку будуть ігноруватися OCR. Скріншоти не будуть оброблятися або зберігатися тимчасово." },
+                    { "addFromHistory", "Додати з історії" },
+                    { "addFromFile", "Додати з файлу..." },
+                    { "removeSelected", "Видалити вибрані" },
+                    { "selectAppsToBlacklist", "Виберіть програми для блокування" }
                 }
             }
         };

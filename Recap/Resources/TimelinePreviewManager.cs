@@ -179,6 +179,7 @@ namespace Recap
                 " - Visual Studio Code", 
                 " - Microsoft Visual Studio", 
                 " - Visual Studio", 
+                " - Antigravity",
                 " - Kick", 
                 " | Kick",
                 " - Google AI Studio",
