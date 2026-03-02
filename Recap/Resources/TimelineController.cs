@@ -60,7 +60,11 @@ namespace Recap
             {
                 if (value >= _timeTrackBar.Minimum && value <= _timeTrackBar.Maximum)
                 {
-                    _timeTrackBar.Value = value;
+                    if (_timeTrackBar.Value != value)
+                    {
+                        _timeTrackBar.Value = value;
+                        TimeChanged?.Invoke(value);
+                    }
                     UpdateInfoLabel();
                 }
             }

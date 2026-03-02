@@ -320,6 +320,7 @@ namespace Recap
                     FrameCaptured?.Invoke(newFrame.Value);
                 }
             }
+            }
             catch (Exception ex)
             {
                 DebugLogger.LogError("CaptureController.OnTimerTick", ex);
@@ -376,4 +377,5 @@ namespace Recap
             _screenshotTimer?.Dispose();
         }
     }
-}
+ }
+ 

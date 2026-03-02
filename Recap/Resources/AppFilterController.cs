@@ -51,6 +51,7 @@ namespace Recap
 
         private List<FilterItem> _viewItems = new List<FilterItem>();
         private bool _isLoading = false;
+        private bool _isRestoringSelection = false;
 
         private readonly HashSet<string> _hierarchicalApps = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
@@ -776,16 +777,25 @@ namespace Recap
 
         private void RestoreSelection(string savedName, int topIndex)
         {
-            if (savedName != null)
+            _isRestoringSelection = true;
+            try
             {
-                int newIndex = _viewItems.FindIndex(x => x.DisplayName == savedName);
-                if (newIndex >= 0) _lstAppFilter.SelectedIndex = newIndex;
-            }
+                if (savedName != null)
+                {
+                    int newIndex = _viewItems.FindIndex(x => x.DisplayName == savedName);
+                    if (newIndex >= 0 && _lstAppFilter.SelectedIndex != newIndex)
+                        _lstAppFilter.SelectedIndex = newIndex;
+                }
 
-            if (topIndex >= 0 && _lstAppFilter.Items.Count > 0)
+                if (topIndex >= 0 && _lstAppFilter.Items.Count > 0)
+                {
+                    int safeTopIndex = Math.Min(topIndex, _lstAppFilter.Items.Count - 1);
+                    _lstAppFilter.TopIndex = safeTopIndex;
+                }
+            }
+            finally
             {
-                int safeTopIndex = Math.Min(topIndex, _lstAppFilter.Items.Count - 1);
-                _lstAppFilter.TopIndex = safeTopIndex;
+                _isRestoringSelection = false;
             }
         }
 
@@ -860,7 +870,7 @@ namespace Recap
 
         private void LstAppFilter_SelectedIndexChanged(object sender, EventArgs e)
         {
-            if (_isLoading || _ignoreNextSelectionChange) return;
+            if (_isLoading || _ignoreNextSelectionChange || _isRestoringSelection) return;
             int index = _lstAppFilter.SelectedIndex;
             if (index < 0 || index >= _viewItems.Count) return;
 

@@ -140,13 +140,24 @@ namespace Recap
         public void JumpToTimestamp(long timestamp)
         {
             if (_dataManager.FilteredFrames == null) return;
-            
+
             int index = _dataManager.FilteredFrames.FindIndex(f => f.TimestampTicks == timestamp);
             if (index != -1)
             {
                 _wantedFrameIndex = index;
-                _currentFrameIndex = -1;   
+                _currentFrameIndex = -1;
                 _timelineController.CurrentIndex = index;
+            }
+        }
+
+        public void JumpToLatestFrame()
+        {
+            if (_dataManager.FilteredFrames != null && _dataManager.FilteredFrames.Count > 0)
+            {
+                int targetIndex = _dataManager.FilteredFrames.Count - 1;
+                _wantedFrameIndex = targetIndex;
+                _currentFrameIndex = -1;
+                _timelineController.CurrentIndex = targetIndex;
             }
         }
 
@@ -312,8 +323,7 @@ namespace Recap
             {
                 if (_dataManager.FilteredFrames != null && _wantedFrameIndex >= 0 && _wantedFrameIndex < _dataManager.FilteredFrames.Count)
                 {
-                    _currentFrameIndex = _wantedFrameIndex;
-                    var miniFrame = _dataManager.FilteredFrames[_currentFrameIndex];
+                    var miniFrame = _dataManager.FilteredFrames[_wantedFrameIndex];
 
                     _timelineController.UpdateTimeLabel(miniFrame.GetTime(), _isGlobalMode);
 
@@ -339,10 +349,12 @@ namespace Recap
                             _currentEndDate = frameDate;
                         }
                     }
-                    
+
                     var frame = _frameRepository.GetFrameIndex(miniFrame.TimestampTicks);
-                    
+
                     if (frame.TimestampTicks == 0) return;
+
+                    _currentFrameIndex = _wantedFrameIndex;
 
                     bool isVideoFrame = frame.IsVideoFrame;
 

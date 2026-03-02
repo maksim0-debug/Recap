@@ -455,6 +455,13 @@ namespace Recap
             timeTrackBar = new TrackBar { Location = new Point(190, 15), Size = new Size(tabPageView.ClientSize.Width - 364, 45), Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right, TickStyle = TickStyle.None, Minimum = 0, Maximum = 100 };
             lblTime = new Label { Name = "lblTime", AutoSize = true, Location = new Point(timeTrackBar.Right - 66, timeTrackBar.Bottom + -22), TextAlign = ContentAlignment.TopRight, Anchor = AnchorStyles.Top | AnchorStyles.Right };
             chkAutoScroll = new CheckBox { Location = new Point(12, 65), AutoSize = true, Checked = false };
+            chkAutoScroll.CheckedChanged += (s, e) =>
+            {
+                if (chkAutoScroll.Checked && _historyViewController != null)
+                {
+                    _historyViewController.JumpToLatestFrame();
+                }
+            };
             btnFullscreen = new Button { Location = new Point(230, 63), Size = new Size(140, 28) };
             btnFullscreen.Click += BtnFullscreen_Click;
             lblInfo = new Label { Name = "lblInfo", Location = new Point(380, 67), Size = new Size(400, 20), AutoSize = false, TextAlign = ContentAlignment.MiddleLeft, Anchor = AnchorStyles.Top | AnchorStyles.Left };
