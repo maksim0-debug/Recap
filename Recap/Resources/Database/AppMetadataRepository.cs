@@ -99,6 +99,32 @@ namespace Recap.Database
             });
         }
 
+        public string GetExecutablePath(string appName)
+        {
+            return _context.ExecuteScalarWithRetry(connection =>
+            {
+                using (var cmd = new SqliteCommand("SELECT ExecutablePath FROM Apps WHERE Name = @name", connection))
+                {
+                    cmd.Parameters.AddWithValue("@name", appName);
+                    var result = cmd.ExecuteScalar();
+                    return result != DBNull.Value ? result as string : null;
+                }
+            });
+        }
+
+        public void UpdateExecutablePath(string appName, string path)
+        {
+            _context.ExecuteWithRetry(connection =>
+            {
+                using (var cmd = new SqliteCommand("UPDATE Apps SET ExecutablePath = @path WHERE Name = @name", connection))
+                {
+                    cmd.Parameters.AddWithValue("@path", path);
+                    cmd.Parameters.AddWithValue("@name", appName);
+                    cmd.ExecuteNonQuery();
+                }
+            });
+        }
+
         public HashSet<string> GetHiddenApps()
         {
             return _context.ExecuteScalarWithRetry(connection =>

@@ -366,3 +366,5 @@ Recap.Tests/
 .vscode/
 .idea/
 /poe.json
+TestApp/vec0.dll
+TestApp/TestApp.csproj

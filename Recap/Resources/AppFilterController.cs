@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -35,9 +36,12 @@ namespace Recap
         private readonly IconManager _iconManager;
         private readonly OcrDatabase _db;
         private readonly FrameRepository _repo;
+        private readonly AppSettings _settings;
         private Dictionary<string, string> _aliases;
         private ContextMenuStrip _ctxMenuApps;
+        private ToolStripMenuItem _toggleOcrItem;
         public event EventHandler AppHidden;
+        public event Action<string, bool> OcrBlacklistToggled;
 
         private List<MiniFrame> _currentFrames = new List<MiniFrame>();
         private Dictionary<int, string> _appMap = new Dictionary<int, string>();
@@ -70,13 +74,14 @@ namespace Recap
         private int _cachedGlobalFrameCount = 0;
         private Dictionary<string, ParsedAppInfo> _parsedAppInfoCache = new Dictionary<string, ParsedAppInfo>();
 
-        public AppFilterController(DarkListBox lstAppFilter, TextBox txtAppSearch, IconManager iconManager, OcrDatabase db, FrameRepository repo)
+        public AppFilterController(DarkListBox lstAppFilter, TextBox txtAppSearch, IconManager iconManager, OcrDatabase db, FrameRepository repo, AppSettings settings)
         {
             _lstAppFilter = lstAppFilter;
             _txtAppSearch = txtAppSearch;
             _iconManager = iconManager;
             _db = db;
             _repo = repo;
+            _settings = settings;
             _aliases = _db.LoadAppAliases();
 
             InitializeContextMenu();
@@ -896,9 +901,13 @@ namespace Recap
         }
 
         private ToolStripMenuItem _excludeAppItem;
+        private ToolStripMenuItem _openFileLocationItem;
+        private AppPathResolver _pathResolver;
 
         private void InitializeContextMenu()
         {
+            _pathResolver = new AppPathResolver(_db);
+
             _ctxMenuApps = new ContextMenuStrip();
             var renameItem = new ToolStripMenuItem(Localization.Get("rename"));
             renameItem.Click += RenameMenuItem_Click;
@@ -915,6 +924,16 @@ namespace Recap
             var hideItem = new ToolStripMenuItem(Localization.Get("hideApp"));
             hideItem.Click += HideAppMenuItem_Click;
             _ctxMenuApps.Items.Add(hideItem);
+
+            _ctxMenuApps.Items.Add(new ToolStripSeparator());
+
+            _toggleOcrItem = new ToolStripMenuItem();
+            _toggleOcrItem.Click += ToggleOcrMenuItem_Click;
+            _ctxMenuApps.Items.Add(_toggleOcrItem);
+
+            _openFileLocationItem = new ToolStripMenuItem(Localization.Get("openFileLocation"));
+            _openFileLocationItem.Click += OpenFileLocationMenuItem_Click;
+            _ctxMenuApps.Items.Add(_openFileLocationItem);
 
             _ctxMenuApps.Items.Add(new ToolStripSeparator());
 
@@ -949,6 +968,15 @@ namespace Recap
             _iconManager.ResetCustomIcon(item.RawName);
         }
 
+        private string GetTargetProcessName(FilterItem item)
+        {
+            if (item.RawName.StartsWith("$$COMPOSITE$$")) return null;
+
+            string raw = (item.RawNames != null && item.RawNames.Count > 0) ? item.RawNames[0] : item.RawName;
+            string exeName = FrameHelper.ParseAppName(raw).ExeName;
+            return exeName.ToLower().Replace(".exe", "");
+        }
+
         private void LstAppFilter_MouseDown(object sender, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Right)
@@ -963,9 +991,118 @@ namespace Recap
                     {
                         bool isMerged = item.RawNames != null && item.RawNames.Count > 1;
                         _excludeAppItem.Visible = isMerged;
+
+                        string targetName = GetTargetProcessName(item);
+                        bool canOpenFileLocation = targetName != null && !item.RawName.Contains("|");
+                        _openFileLocationItem.Visible = canOpenFileLocation;
+
+                        if (targetName == null || item.IsNote)
+                        {
+                            _toggleOcrItem.Visible = false;
+                        }
+                        else
+                        {
+                            _toggleOcrItem.Visible = true;
+                            bool isInBlacklist = _settings.OcrBlacklist.Cast<string>().Contains(targetName, StringComparer.OrdinalIgnoreCase);
+                            _toggleOcrItem.Text = isInBlacklist ? Localization.Get("enableOcr") : Localization.Get("excludeFromOcr");
+                        }
+
                         _ctxMenuApps.Show(_lstAppFilter, e.Location);
                     }
                 }
+            }
+        }
+
+        private void ToggleOcrMenuItem_Click(object sender, EventArgs e)
+        {
+            if (_lstAppFilter.SelectedIndex < 0 || _lstAppFilter.SelectedIndex >= _viewItems.Count) return;
+            var item = _viewItems[_lstAppFilter.SelectedIndex];
+
+            string cleanName = GetTargetProcessName(item);
+            if (cleanName == null) return;
+
+            bool isInBlacklist = _settings.OcrBlacklist.Cast<string>().Contains(cleanName, StringComparer.OrdinalIgnoreCase);
+
+            OcrBlacklistToggled?.Invoke(cleanName, !isInBlacklist);
+        }
+
+        private async void OpenFileLocationMenuItem_Click(object sender, EventArgs e)
+        {
+            if (_lstAppFilter.SelectedIndex < 0 || _lstAppFilter.SelectedIndex >= _viewItems.Count) return;
+            var item = _viewItems[_lstAppFilter.SelectedIndex];
+
+            string appName = item.RawName;
+            if (string.IsNullOrEmpty(appName)) return;
+
+            Cursor.Current = Cursors.WaitCursor;
+            try
+            {
+                string resolvedPath = await _pathResolver.ResolveAsync(appName);
+                if (!string.IsNullOrEmpty(resolvedPath))
+                {
+                    System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{resolvedPath}\"");
+                }
+                else
+                {
+                    ShowInfoMessage(Localization.Get("errFileNotFound"));
+                }
+            }
+            catch (Win32Exception)
+            {
+                ShowInfoMessage(Localization.Get("errOpenFileLocationDenied"));
+            }
+            catch (Exception ex)
+            {
+                ShowInfoMessage(Localization.Get("errFileNotFound") + "\n\n" + ex.Message);
+            }
+            finally
+            {
+                Cursor.Current = Cursors.Default;
+            }
+        }
+
+        private void ShowInfoMessage(string message)
+        {
+            using (var dialog = new Form())
+            {
+                dialog.Text = Localization.Get("windowTitle");
+                dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dialog.StartPosition = FormStartPosition.CenterParent;
+                dialog.MaximizeBox = false;
+                dialog.MinimizeBox = false;
+                dialog.ClientSize = new System.Drawing.Size(500, 165);
+
+                var iconBox = new PictureBox
+                {
+                    Image = _iconManager?.GetInfoIcon(),
+                    Size = new System.Drawing.Size(32, 32),
+                    Location = new System.Drawing.Point(20, 20),
+                    SizeMode = PictureBoxSizeMode.Zoom
+                };
+
+                var lbl = new Label
+                {
+                    Text = message,
+                    AutoSize = false,
+                    Location = new System.Drawing.Point(65, 20),
+                    Size = new System.Drawing.Size(410, 80)
+                };
+
+                var ok = new Button
+                {
+                    Text = Localization.Get("ok"),
+                    DialogResult = DialogResult.OK,
+                    Size = new System.Drawing.Size(100, 30),
+                    Location = new System.Drawing.Point(375, 115)
+                };
+
+                dialog.Controls.Add(iconBox);
+                dialog.Controls.Add(lbl);
+                dialog.Controls.Add(ok);
+                dialog.AcceptButton = ok;
+
+                AppStyler.Apply(dialog);
+                dialog.ShowDialog();
             }
         }
 
@@ -1098,11 +1235,14 @@ namespace Recap
 
         public void Dispose()
         {
+            OcrBlacklistToggled = null;
             _iconManager.IconLoaded -= OnIconLoaded;
             _lstAppFilter.MouseClick -= LstAppFilter_MouseClick;
+            _lstAppFilter.MouseDown -= LstAppFilter_MouseDown;
             _lstAppFilter.MouseDoubleClick -= LstAppFilter_MouseDoubleClick;
             _lstAppFilter.SelectedIndexChanged -= LstAppFilter_SelectedIndexChanged;
             _txtAppSearch.TextChanged -= TxtAppSearch_TextChanged;
+            _ctxMenuApps?.Dispose();
         }
     }
 }

@@ -102,7 +102,8 @@ namespace Recap.Database
                 CREATE TABLE IF NOT EXISTS Apps (
                     ID INTEGER PRIMARY KEY AUTOINCREMENT,
                     Name TEXT NOT NULL UNIQUE,
-                    HasCustomIcon INTEGER DEFAULT 0
+                    HasCustomIcon INTEGER DEFAULT 0,
+                    ExecutablePath TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_apps_name ON Apps(Name);
 
@@ -174,7 +175,15 @@ namespace Recap.Database
                 DebugLogger.LogError("DatabaseMigrator.NotesMigration", ex);
             }
 
-            try { using (var cmd = new SqliteCommand("ALTER TABLE Apps ADD COLUMN HasCustomIcon INTEGER DEFAULT 0;", connection)) cmd.ExecuteNonQuery(); } catch { }
+            if (!HasColumn(connection, "Apps", "HasCustomIcon"))
+            {
+                try { using (var cmd = new SqliteCommand("ALTER TABLE Apps ADD COLUMN HasCustomIcon INTEGER DEFAULT 0;", connection)) cmd.ExecuteNonQuery(); } catch { }
+            }
+
+            if (!HasColumn(connection, "Apps", "ExecutablePath"))
+            {
+                try { using (var cmd = new SqliteCommand("ALTER TABLE Apps ADD COLUMN ExecutablePath TEXT;", connection)) cmd.ExecuteNonQuery(); } catch { }
+            }
             try { using (var cmd = new SqliteCommand("ALTER TABLE FramesMeta ADD COLUMN DataOffset INTEGER DEFAULT 0;", connection)) cmd.ExecuteNonQuery(); } catch { }
             try { using (var cmd = new SqliteCommand("ALTER TABLE FramesMeta ADD COLUMN DataLength INTEGER DEFAULT 0;", connection)) cmd.ExecuteNonQuery(); } catch { }
             try { using (var cmd = new SqliteCommand("ALTER TABLE FramesMeta ADD COLUMN AppID INTEGER;", connection)) cmd.ExecuteNonQuery(); } catch { }
@@ -237,6 +246,28 @@ namespace Recap.Database
             }
 
             RunFtsMigrations(connection);
+        }
+
+        private bool HasColumn(SqliteConnection connection, string tableName, string columnName)
+        {
+            try
+            {
+                using (var cmd = new SqliteCommand($"PRAGMA table_info({tableName});", connection))
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var name = reader["name"] as string;
+                        if (string.Equals(name, columnName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return false;
         }
 
         private void RunFtsMigrations(SqliteConnection connection)

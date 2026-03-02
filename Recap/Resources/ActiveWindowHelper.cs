@@ -87,6 +87,46 @@ namespace Recap
             }
         }
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, uint processId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern bool QueryFullProcessImageName(IntPtr hProcess, uint dwFlags, StringBuilder lpExeName, ref uint lpdwSize);
+
+        public static string GetProcessPathFromHwnd(IntPtr hwnd)
+        {
+            try
+            {
+                if (hwnd == IntPtr.Zero) return null;
+
+                GetWindowThreadProcessId(hwnd, out uint pid);
+                
+                const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+                IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+                if (hProcess == IntPtr.Zero) return null;
+
+                try
+                {
+                    uint capacity = 1024;
+                    StringBuilder sb = new StringBuilder((int)capacity);
+                    if (QueryFullProcessImageName(hProcess, 0, sb, ref capacity))
+                    {
+                        return sb.ToString();
+                    }
+                }
+                finally
+                {
+                    CloseHandle(hProcess);
+                }
+            }
+            catch { }
+            return null;
+        }
+
         public static string GetActiveWindowTitle()
         {
             return GetWindowTitleFromHwnd(GetForegroundWindow());

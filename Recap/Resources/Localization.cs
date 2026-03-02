@@ -98,6 +98,9 @@ namespace Recap
                     { "activityTooltip", "{0}:00 - {1}:00\nActivity: {2}h {3}m" },
                     { "activity", "Activity" },
                     { "timeFormatFull", "{0}h {1}m {2}s" },
+                    { "openFileLocation", "Open file location" },
+                    { "errFileNotFound", "Could not find the executable file. The application may have been deleted or moved." },
+                    { "errOpenFileLocationDenied", "Could not open file location. The app may be a protected UWP app, or access is denied." },
                     { "timeFormatShort", "{0}h {1}m" },
                     { "timeFormatMinSec", "{0}m {1}s" },
                     { "timeFormatSec", "{0}s" },
@@ -188,7 +191,9 @@ namespace Recap
                     { "addFromHistory", "Add from History" },
                     { "addFromFile", "Add from File..." },
                     { "removeSelected", "Remove Selected" },
-                    { "selectAppsToBlacklist", "Select Applications to Blacklist" }
+                    { "selectAppsToBlacklist", "Select Applications to Blacklist" },
+                    { "excludeFromOcr", "Exclude from OCR" },
+                    { "enableOcr", "Enable OCR" }
                 }
             },
             {
@@ -280,6 +285,9 @@ namespace Recap
                     { "activityTooltip", "{0}:00 - {1}:00\nАктивность: {2}ч {3}м" },
                     { "activity", "Активность" },
                     { "timeFormatFull", "{0}ч {1}м {2}с" },
+                    { "openFileLocation", "Открыть расположение файла" },
+                    { "errFileNotFound", "Не удалось найти исполняемый файл. Возможно, приложение было удалено или перемещено." },
+                    { "errOpenFileLocationDenied", "Не удалось открыть расположение файла. Возможно, это защищённое UWP-приложение или доступ запрещён." },
                     { "timeFormatShort", "{0}ч {1}м" },
                     { "timeFormatMinSec", "{0}м {1}с" },
                     { "timeFormatSec", "{0}с" },
@@ -370,7 +378,9 @@ namespace Recap
                     { "addFromHistory", "Добавить из истории" },
                     { "addFromFile", "Добавить из файла..." },
                     { "removeSelected", "Удалить выбранные" },
-                    { "selectAppsToBlacklist", "Выберите приложения для блокировки" }
+                    { "selectAppsToBlacklist", "Выберите приложения для блокировки" },
+                    { "excludeFromOcr", "Исключить из OCR" },
+                    { "enableOcr", "Включить OCR" }
                 }
             },
             {
@@ -462,6 +472,9 @@ namespace Recap
                     { "activityTooltip", "{0}:00 - {1}:00\nАктивність: {2}год {3}хв" },
                     { "activity", "Активність" },
                     { "timeFormatFull", "{0}г {1}х {2}с" },
+                    { "openFileLocation", "Відкрити розташування файлу" },
+                    { "errFileNotFound", "Не вдалося знайти виконуваний файл. Можливо, програму було видалено або переміщено." },
+                    { "errOpenFileLocationDenied", "Не вдалося відкрити розташування файлу. Можливо, це захищений UWP-застосунок або доступ заборонено." },
                     { "timeFormatShort", "{0}г {1}х" },
                     { "timeFormatMinSec", "{0}х {1}с" },
                     { "timeFormatSec", "{0}с" },
@@ -552,7 +565,9 @@ namespace Recap
                     { "addFromHistory", "Додати з історії" },
                     { "addFromFile", "Додати з файлу..." },
                     { "removeSelected", "Видалити вибрані" },
-                    { "selectAppsToBlacklist", "Виберіть програми для блокування" }
+                    { "selectAppsToBlacklist", "Виберіть програми для блокування" },
+                    { "excludeFromOcr", "Виключити з OCR" },
+                    { "enableOcr", "Увімкнути OCR" }
                 }
             }
         };

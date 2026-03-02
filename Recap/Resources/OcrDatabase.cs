@@ -97,6 +97,10 @@ namespace Recap
         
         public bool CheckHasCustomIcon(string appName) => _appRepo.CheckHasCustomIcon(appName);
 
+        public string GetExecutablePath(string appName) => _appRepo.GetExecutablePath(appName);
+
+        public void UpdateExecutablePath(string appName, string path) => _appRepo.UpdateExecutablePath(appName, path);
+
         public void SaveDailyActivityStats(string dayStr, double totalSeconds) => _frameRepo.SaveDailyActivityStats(dayStr, totalSeconds);
         
         public void ClearAllDailyActivityStats() => _frameRepo.ClearAllDailyActivityStats();

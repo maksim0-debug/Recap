@@ -121,7 +121,11 @@ namespace Recap
                 _captureController.Dispose();
             }
 
-            _historyViewController?.Dispose();
+            if (_historyViewController != null)
+            {
+                _historyViewController.OcrBlacklistToggled -= OnOcrBlacklistToggled;
+                _historyViewController.Dispose();
+            }
             _statisticsViewController?.Dispose();
             _hourlyStatisticsController?.Dispose();
 
@@ -163,6 +167,8 @@ namespace Recap
                 }
             };
 
+            _historyViewController.OcrBlacklistToggled += OnOcrBlacklistToggled;
+
             _uiStateManager = new UIStateManager(
                 btnStart, btnStop, btnBrowse, txtStoragePath, btnSettings, lblStatus);
 
@@ -182,6 +188,38 @@ namespace Recap
 
             _hourlyStatisticsController = new HourlyStatisticsController(
                 hourlyActivityHeatmap, _frameRepository, cmbHourlyPeriod, dtpHourlyStart, dtpHourlyEnd, lblHourlyCustom, lblHourlyTotal);
+        }
+
+        private void OnOcrBlacklistToggled(string cleanAppName, bool addToBlacklist)
+        {
+            if (addToBlacklist)
+            {
+                bool exists = false;
+                foreach (string item in _currentSettings.OcrBlacklist)
+                {
+                    if (string.Equals(item, cleanAppName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+                if (!exists)
+                {
+                    _currentSettings.OcrBlacklist.Add(cleanAppName);
+                }
+            }
+            else
+            {
+                for (int i = _currentSettings.OcrBlacklist.Count - 1; i >= 0; i--)
+                {
+                    if (string.Equals(_currentSettings.OcrBlacklist[i], cleanAppName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _currentSettings.OcrBlacklist.RemoveAt(i);
+                    }
+                }
+            }
+
+            SaveSettings();
         }
 
         private void OnDayChanged()
@@ -517,7 +555,11 @@ namespace Recap
 
                 _captureController?.Dispose();
                 _screenshotService?.Dispose();
-                _historyViewController?.Dispose();
+                if (_historyViewController != null)
+                {
+                    _historyViewController.OcrBlacklistToggled -= OnOcrBlacklistToggled;
+                    _historyViewController.Dispose();
+                }
                 _statisticsViewController?.Dispose();
                 _iconManager.Dispose();
                 
@@ -719,6 +761,7 @@ namespace Recap
 
                         if (_historyViewController != null)
                         {
+                            _historyViewController.OcrBlacklistToggled -= OnOcrBlacklistToggled;
                             _historyViewController.Dispose();
                             _historyViewController = null;
                         }

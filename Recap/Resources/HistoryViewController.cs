@@ -35,6 +35,7 @@ namespace Recap
         private readonly MediaPlayerController _mediaController;
 
         private bool _isLoading = false;
+        private List<FrameIndex> _pendingFrames = new List<FrameIndex>();
         private bool _isInitialLoad = true;
         private bool _isGlobalMode = false;
 
@@ -58,6 +59,7 @@ namespace Recap
         
         private DateTime _lastNotifiedDate = DateTime.MinValue;
         public event Action<DateTime> CurrentDateChanged;
+        public event Action<string, bool> OcrBlacklistToggled;
 
         private ContextMenuStrip _contextMenu;
         private OcrTextForm _ocrTextForm;
@@ -103,12 +105,13 @@ namespace Recap
             _uiTimer.Tick += OnUiTimerTick;
             _uiTimer.Start();
 
-            _appFilterController = new AppFilterController(lstAppFilter, txtAppSearch, iconManager, _ocrDb, _frameRepository);
+            _appFilterController = new AppFilterController(lstAppFilter, txtAppSearch, iconManager, _ocrDb, _frameRepository, settings);
             lstAppFilter.ShowFrameCount = settings.ShowFrameCount;   
             _timelineController = new TimelineController(timeTrackBar, lblTime, lblInfo, chkAutoScroll, null, frameRepository, iconManager);
 
             _appFilterController.FilterChanged += OnAppFilterChanged;
             _appFilterController.AppHidden += OnAppHidden;
+            _appFilterController.OcrBlacklistToggled += (appName, add) => OcrBlacklistToggled?.Invoke(appName, add);
             _frameRepository.DataInvalidated += OnDataInvalidated;
             _timelineController.TimeChanged += OnTimeChanged;
 
@@ -535,6 +538,7 @@ namespace Recap
         {
             if (_isLoading) return;
             _isLoading = true;
+            _pendingFrames.Clear();
             
             _timelineController.SetFrames(new List<MiniFrame>(), false, true);
 
@@ -569,6 +573,16 @@ namespace Recap
 
             if (parentForm != null) parentForm.Cursor = Cursors.Default;
             _isLoading = false;
+
+            if (_pendingFrames.Count > 0)
+            {
+                var framesToProcess = _pendingFrames.ToList();
+                _pendingFrames.Clear();
+                foreach (var pf in framesToProcess)
+                {
+                    HandleNewFrame(pf);
+                }
+            }
         }
 
         private async void ApplyAppFilterAndDisplay(bool isLiveUpdate)
@@ -678,6 +692,12 @@ namespace Recap
                 return;
             }
 
+            if (_isLoading)
+            {
+                _pendingFrames.Add(newFrame);
+                return;
+            }
+
             int appId = -1;
             appId = _dataManager.GetAppId(newFrame.AppName);
             
@@ -722,6 +742,11 @@ namespace Recap
 
         private void ProcessNewFrame(MiniFrame newFrame)
         {
+            if (_isLoading || _dataManager.FilteredFrames == null || _dataManager.AllLoadedFrames == null)
+            {
+                return; 
+            }
+
             var filter = _selectedAppFilter;
             
             bool matches = (filter == null || filter.Count == 0) || _dataManager.MatchesAppFilter(newFrame, filter);
@@ -822,11 +847,17 @@ namespace Recap
 
         public void Dispose()
         {
+            FrameChanged = null;
+            CurrentDateChanged = null;
+            OcrBlacklistToggled = null;
+
             _uiTimer?.Stop(); _uiTimer?.Dispose();
             _imageLoadCts?.Cancel(); _imageLoadCts?.Dispose();
 
             var txtAppSearch = _appFilterController.GetType().GetField("_txtAppSearch", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_appFilterController) as TextBox;
             if (txtAppSearch != null) txtAppSearch.KeyDown -= OnSearchKeyDown;
+
+            if (_txtOcrSearch != null) _txtOcrSearch.KeyDown -= OnOcrSearchKeyDown;
 
             if (_appFilterController != null) 
             { 

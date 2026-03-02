@@ -219,7 +219,12 @@ namespace Recap
                         }
                         _imageList.Images.Add(appName, newIcon);
                         
-                        _lvApps.Invalidate();
+                        foreach (ListViewItem item in _lvApps.Items)
+                        {
+                            string key = item.Text;
+                            item.ImageKey = null;
+                            item.ImageKey = key;
+                        }
                     }
                 }));
             }

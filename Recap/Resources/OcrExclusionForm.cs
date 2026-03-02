@@ -215,7 +215,12 @@ namespace Recap
                         }
                         _lvBlacklist.SmallImageList.Images.Add(appName, newIcon);
                         
-                        _lvBlacklist.Invalidate();
+                        foreach (ListViewItem item in _lvBlacklist.Items)
+                        {
+                            string key = item.Text;
+                            item.ImageKey = null;
+                            item.ImageKey = key;
+                        }
                     }
                 }));
             }

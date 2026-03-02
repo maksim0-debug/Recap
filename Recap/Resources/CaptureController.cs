@@ -28,6 +28,7 @@ namespace Recap
         private readonly OcrService _ocrService;
         private readonly IconManager _iconManager;
         private SystemLoadMonitor _systemLoadMonitor;
+        private readonly System.Collections.Generic.HashSet<string> _pathSavedApps = new System.Collections.Generic.HashSet<string>();
 
         public CaptureController(ScreenshotService screenshotService, FrameRepository frameRepository, AppSettings settings, OcrDatabase ocrDb, OcrService ocrService = null, IconManager iconManager = null)
         {
@@ -88,7 +89,9 @@ namespace Recap
             if (!IsCapturing) return;
             _screenshotTimer.Stop();
 
-            DateTime now = DateTime.Now;
+            try
+            {
+                DateTime now = DateTime.Now;
             if (_lastCaptureDate.Date < now.Date)
             {
                 DayChanged?.Invoke();
@@ -259,6 +262,19 @@ namespace Recap
 
                 if (newFrame.HasValue)
                 {
+                    if (!string.IsNullOrEmpty(processName) &&
+                        processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) &&
+                        !_pathSavedApps.Contains(processName))
+                    {
+                        string exePath = ActiveWindowHelper.GetProcessPathFromHwnd(realHwnd);
+                        if (!string.IsNullOrEmpty(exePath))
+                        {
+                            _ocrDb?.UpdateExecutablePath(processName, exePath);
+                        }
+
+                        _pathSavedApps.Add(processName);
+                    }
+
                     _iconManager?.TryFetchIconFromHwnd(realHwnd, finalAppName);
 
                     if (finalAppName.Contains("|"))
@@ -304,10 +320,16 @@ namespace Recap
                     FrameCaptured?.Invoke(newFrame.Value);
                 }
             }
-
-            if (IsCapturing)
+            catch (Exception ex)
             {
-                _screenshotTimer.Start();
+                DebugLogger.LogError("CaptureController.OnTimerTick", ex);
+            }
+            finally
+            {
+                if (IsCapturing)
+                {
+                    _screenshotTimer.Start();
+                }
             }
         }
 
