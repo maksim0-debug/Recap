@@ -261,6 +261,25 @@ namespace Recap.Database
                             cmd.ExecuteNonQuery();
                         }
                     }
+
+                    using (var cmd = new SqliteCommand(
+                        "INSERT OR IGNORE INTO Apps (Name) " +
+                        "SELECT DISTINCT AppName FROM FramesMeta " +
+                        "WHERE AppName != '' AND AppName IS NOT NULL AND AppID IS NULL",
+                        connection, transaction))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    using (var cmd = new SqliteCommand(
+                        "UPDATE FramesMeta " +
+                        "SET AppID = (SELECT ID FROM Apps WHERE Apps.Name = FramesMeta.AppName) " +
+                        "WHERE AppID IS NULL",
+                        connection, transaction))
+                    {
+                        cmd.ExecuteNonQuery();
+                    }
+
                     transaction.Commit();
                 }
             });

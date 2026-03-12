@@ -343,6 +343,7 @@ namespace Recap
 
                             byte[] nameBytes = reader.ReadBytes(nameLen);
                             string appName = Encoding.UTF8.GetString(nameBytes);
+                            appName = Utilities.AppNameParser.UpgradeLegacyName(appName);
 
                             if (!stringCache.TryGetValue(appName, out var cached))
                             {
@@ -411,6 +412,7 @@ namespace Recap
                             {
                                 appName = $"{appName}|{parts[3]}";
                             }
+                            appName = Utilities.AppNameParser.UpgradeLegacyName(appName);
 
                             if (!stringCache.TryGetValue(appName, out var cached))
                             {
@@ -549,7 +551,8 @@ namespace Recap
 
                             byte[] nameBytes = br.ReadBytes(nameLen);
                             string appName = Encoding.UTF8.GetString(nameBytes);
-                            
+                            appName = Utilities.AppNameParser.UpgradeLegacyName(appName);
+
                             int dataLen = br.ReadInt32();
                             long dataOffset = fs.Position;
                             

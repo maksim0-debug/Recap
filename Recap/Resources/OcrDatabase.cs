@@ -214,5 +214,9 @@ namespace Recap
         }
         
         public void DeleteNote(long timestamp) => _userRepo.DeleteNote(timestamp);
+
+        public System.Collections.Generic.List<string> GetLegacyAppNames() => _appRepo.GetLegacyAppNames();
+        public void RenameApp(string oldName, string newName) => _appRepo.RenameApp(oldName, newName);
+        public int RepairNullAppIds() => _appRepo.RepairNullAppIds();
     }
 }

@@ -166,6 +166,8 @@ namespace Recap
             public string EffectiveExe;
             public string GroupKey;
             public string DetailKey;
+            public string SubDetailKey;
+            public string ExtraDetailKey;
             public bool IsVideo;
             public string VideoId;
         }
@@ -318,6 +320,28 @@ namespace Recap
                             detailNode.IsVideoNode = true;
                             detailNode.VideoId = info.VideoId;
                         }
+
+                        if (info.SubDetailKey != null)
+                        {
+                            if (!detailNode.Children.TryGetValue(info.SubDetailKey, out var subDetailNode))
+                            {
+                                subDetailNode = new NodeData();
+                                detailNode.Children[info.SubDetailKey] = subDetailNode;
+                            }
+                            subDetailNode.TotalMs += duration;
+                            subDetailNode.FrameCount++;
+
+                            if (info.ExtraDetailKey != null)
+                            {
+                                if (!subDetailNode.Children.TryGetValue(info.ExtraDetailKey, out var extraDetailNode))
+                                {
+                                    extraDetailNode = new NodeData();
+                                    subDetailNode.Children[info.ExtraDetailKey] = extraDetailNode;
+                                }
+                                extraDetailNode.TotalMs += duration;
+                                extraDetailNode.FrameCount++;
+                            }
+                        }
                     }
                 }
             }
@@ -399,6 +423,26 @@ namespace Recap
                         detailNode.IsVideoNode = true;
                         detailNode.VideoId = info.VideoId;
                     }
+
+                    if (info.SubDetailKey != null)
+                    {
+                        if (!detailNode.Children.ContainsKey(info.SubDetailKey))
+                            detailNode.Children[info.SubDetailKey] = new NodeData();
+
+                        var subDetailNode = detailNode.Children[info.SubDetailKey];
+                        subDetailNode.TotalMs += duration;
+                        subDetailNode.FrameCount++;
+
+                        if (info.ExtraDetailKey != null)
+                        {
+                            if (!subDetailNode.Children.ContainsKey(info.ExtraDetailKey))
+                                subDetailNode.Children[info.ExtraDetailKey] = new NodeData();
+
+                            var extraDetailNode = subDetailNode.Children[info.ExtraDetailKey];
+                            extraDetailNode.TotalMs += duration;
+                            extraDetailNode.FrameCount++;
+                        }
+                    }
                 }
             }
         }
@@ -432,6 +476,20 @@ namespace Recap
                     {
                         info.GroupKey = rest.Substring(0, pipeIndex);
                         info.DetailKey = rest.Substring(pipeIndex + 1);
+
+                        int secondPipeIndex = info.DetailKey.IndexOf('|');
+                        if (secondPipeIndex > 0)
+                        {
+                            info.SubDetailKey = info.DetailKey.Substring(secondPipeIndex + 1);
+                            info.DetailKey = info.DetailKey.Substring(0, secondPipeIndex);
+
+                            int thirdPipeIndex = info.SubDetailKey.IndexOf('|');
+                            if (thirdPipeIndex > 0)
+                            {
+                                info.ExtraDetailKey = info.SubDetailKey.Substring(thirdPipeIndex + 1);
+                                info.SubDetailKey = info.SubDetailKey.Substring(0, thirdPipeIndex);
+                            }
+                        }
                     }
                     else if (isYouTube)
                     {
@@ -524,6 +582,22 @@ namespace Recap
                         {
                             aggGrand.IsVideoNode = true;
                             aggGrand.VideoId = grandKvp.Value.VideoId;
+                        }
+
+                        foreach (var greatGrandKvp in grandKvp.Value.Children)
+                        {
+                            if (!aggGrand.Children.ContainsKey(greatGrandKvp.Key)) aggGrand.Children[greatGrandKvp.Key] = new NodeData();
+                            var aggGreatGrand = aggGrand.Children[greatGrandKvp.Key];
+                            aggGreatGrand.TotalMs += greatGrandKvp.Value.TotalMs;
+                            aggGreatGrand.FrameCount += greatGrandKvp.Value.FrameCount;
+
+                            foreach (var extraKvp in greatGrandKvp.Value.Children)
+                            {
+                                if (!aggGreatGrand.Children.ContainsKey(extraKvp.Key)) aggGreatGrand.Children[extraKvp.Key] = new NodeData();
+                                var aggExtra = aggGreatGrand.Children[extraKvp.Key];
+                                aggExtra.TotalMs += extraKvp.Value.TotalMs;
+                                aggExtra.FrameCount += extraKvp.Value.FrameCount;
+                            }
                         }
                     }
                 }
@@ -749,11 +823,18 @@ namespace Recap
 
                 bool isGroupExpanded = _expandedGroups.Contains(fullGroupKey) || isSearch;
 
+                string displayChildName = childName;
+                if (level == 2 && parentRaw != null && parentRaw.Contains("|github.com") && childName.Contains("/") && childName.Split('/').Length == 2)
+                {
+                    string[] splitRepo = childName.Split('/');
+                    displayChildName = $"{splitRepo[1]} - {splitRepo[0]}";
+                }
+
                 var childItem = new FilterItem
                 {
                     RawName = fullGroupKey,
                     RawNames = new List<string> { $"{parentRaw}|{childName}" },
-                    DisplayName = childName,
+                    DisplayName = displayChildName,
                     DurationMs = childNode.TotalMs,
                     FrameCount = childNode.FrameCount,
                     Level = level,

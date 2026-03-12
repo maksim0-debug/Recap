@@ -1,6 +1,7 @@
 using System;
 using System.Data;
 using System.Drawing;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -94,10 +95,16 @@ namespace Recap
             btnRepairTimeline.Size = new System.Drawing.Size(120, 30);
             btnRepairTimeline.Click += OnRepairTimelineClick;
 
+            var btnMigrateApps = new Button();
+            btnMigrateApps.Text = "Migrate Old Names";
+            btnMigrateApps.Size = new System.Drawing.Size(120, 30);
+            btnMigrateApps.Click += OnMigrateAppsClick;
+
             panelButtons.Controls.Add(_btnCancel);
             panelButtons.Controls.Add(_btnSave);
             panelButtons.Controls.Add(_btnRebuildIndex);
             panelButtons.Controls.Add(btnRepairTimeline);
+            panelButtons.Controls.Add(btnMigrateApps);
 
             _tabSettings.Controls.Add(_propertyGrid);
             _tabSettings.Controls.Add(panelButtons);
@@ -313,6 +320,83 @@ namespace Recap
                 _lblSqlStatus.Text = $"Error: {ex.Message}";
                 _lblSqlStatus.ForeColor = Color.Red;
                 MessageBox.Show(ex.Message, "SQL Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async void OnMigrateAppsClick(object sender, EventArgs e)
+        {
+            if (_ocrDb == null)
+            {
+                MessageBox.Show("Database not initialized.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            var confirmResult = MessageBox.Show(
+                "This will scan the database for old flat records and upgrade them to the new hierarchical format. Continue?",
+                "Confirm Migration",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+
+            if (confirmResult != DialogResult.Yes)
+                return;
+
+            Button btn = sender as Button;
+            if (btn != null) btn.Enabled = false;
+
+            try
+            {
+                int updatedCount = 0;
+                await Task.Run(() =>
+                {
+                    var legacyNames = _ocrDb.GetLegacyAppNames();
+                    foreach (var oldName in legacyNames)
+                    {
+                        var parts = oldName.Split('|');
+                        if (parts.Length < 2) continue;
+
+                        string processName = parts[0];
+                        string procLower = processName.ToLower();
+
+                        bool isBrowser = procLower.Contains("chrome") || procLower.Contains("msedge") || procLower.Contains("brave") || procLower.Contains("opera");
+                        string newName = oldName;
+
+                        if (isBrowser)     
+                        {
+                            if (parts.Length >= 3)
+                            {
+                                string domain = parts[1];
+                                string title = string.Join("|", parts.Skip(2));
+                                newName = Utilities.AppNameParser.ParseWindowName(processName, domain, title);
+                            }
+                        }
+                        else     
+                        {
+                            if (parts.Length >= 2)
+                            {
+                                string title = string.Join("|", parts.Skip(1));
+                                newName = Utilities.AppNameParser.ParseWindowName(processName, "", title);
+                            }
+                        }
+
+                        if (newName != oldName && newName.Contains("|"))
+                        {
+                            _ocrDb.RenameApp(oldName, newName);
+                            updatedCount++;
+                        }
+                    }
+
+                    _ocrDb.RepairNullAppIds();
+                });
+
+                MessageBox.Show($"Migration completed successfully.\nUpdated {updatedCount} applications to the new format.\n\nNote: Please RESTART the application to load the new data into the timeline cache.", "Migration Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error during migration: {ex.Message}", "Migration Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                if (btn != null) btn.Enabled = true;
             }
         }
     }

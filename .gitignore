@@ -368,3 +368,5 @@ Recap.Tests/
 /poe.json
 TestApp/vec0.dll
 TestApp/TestApp.csproj
+.history/
+.TestAppConsole/
